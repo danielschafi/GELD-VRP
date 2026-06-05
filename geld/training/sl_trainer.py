@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import MultiStepLR as Scheduler
 from geld.env.synthetic import SyntheticEnvironment
 from geld.model.geld_model import GeldModel
 from geld.utils.device import setup_device
+from geld.utils.experiment_tracker import ExperimentTracker, should_log_batch
 from geld.utils.logging import get_result_folder, util_print_log_array, util_save_log_image_with_label
 from geld.utils.metrics import AverageMeter, LogData, TimeEstimator
 
@@ -16,7 +17,7 @@ from geld.utils.metrics import AverageMeter, LogData, TimeEstimator
 class SupervisedTrainer:
     """Stage-1 SL trainer on small-scale TSP-k_m instances."""
 
-    def __init__(self, env_params, model_params, optimizer_params, trainer_params):
+    def __init__(self, env_params, model_params, optimizer_params, trainer_params, tracker: ExperimentTracker | None = None):
         self.env_params = env_params
         self.model_params = model_params
         self.optimizer_params = optimizer_params
@@ -25,6 +26,7 @@ class SupervisedTrainer:
         self.logger = getLogger(name="trainer")
         self.result_folder = get_result_folder()
         self.result_log = LogData()
+        self.tracker = tracker
         self.device = setup_device(trainer_params["use_cuda"], trainer_params["cuda_device_num"])
 
         torch.manual_seed(2024)
@@ -68,8 +70,26 @@ class SupervisedTrainer:
             )
             self.logger.info(
                 f"Epoch {epoch:3d}/{self.trainer_params['epochs']:3d}: "
+                f"ref={train_reference_length:.4f}, pred={train_predicted_length:.4f}, "
+                f"loss={train_loss:.4f}, "
                 f"Time Est.: Elapsed[{elapsed_time_str}], Remain[{remain_time_str}]"
             )
+            if self.tracker is not None:
+                self.tracker.log_epoch(
+                    {
+                        "epoch": epoch,
+                        "train_reference_length": train_reference_length,
+                        "train_predicted_length": train_predicted_length,
+                        "train_loss": train_loss,
+                    },
+                    step=epoch,
+                )
+                self.tracker.save_training_progress(
+                    self.result_log,
+                    logging_config=self.trainer_params.get("logging"),
+                    metadata={"run_type": "train_sl", "trainer_params": self.trainer_params},
+                    save_plots=epoch > 1,
+                )
 
             all_done = epoch == self.trainer_params["epochs"]
             model_save_interval = self.trainer_params["logging"]["model_save_interval"]
@@ -121,6 +141,13 @@ class SupervisedTrainer:
             if all_done:
                 self.logger.info(" *** Training Done *** ")
                 util_print_log_array(self.logger, self.result_log)
+                if self.tracker is not None:
+                    self.tracker.save_training_progress(
+                        self.result_log,
+                        logging_config=self.trainer_params.get("logging"),
+                        metadata={"run_type": "train_sl", "trainer_params": self.trainer_params},
+                    )
+                    self.tracker.finish()
 
     def _train_one_epoch(self, epoch):
         """Train one epoch over all LEHD episodes."""
@@ -129,6 +156,7 @@ class SupervisedTrainer:
         loss_meter = AverageMeter()
         train_num_episode = self.trainer_params["train_episodes"]
         episode = 0
+        batch_log_interval = self.trainer_params["logging"].get("batch_log_interval", 50)
 
         while episode < train_num_episode:
             remaining = train_num_episode - episode
@@ -138,41 +166,41 @@ class SupervisedTrainer:
             predicted_length_meter.update(predicted_length, batch_size)
             loss_meter.update(avg_loss, batch_size)
             episode += batch_size
-            self.logger.info(
-                f"Epoch {epoch:3d}: Train {episode:3d}/{train_num_episode:3d}"
-                f"({100.0 * episode / train_num_episode:1.1f}%)  "
-                f"Reference length: {reference_length_meter.avg:.4f}, "
-                f"Predicted length: {predicted_length_meter.avg:.4f}, "
-                f"Loss: {loss_meter.avg:.4f}"
-            )
+            if should_log_batch(episode, train_num_episode, batch_log_interval):
+                self.logger.info(
+                    f"Epoch {epoch:3d}: Train {episode:3d}/{train_num_episode:3d}"
+                    f"({100.0 * episode / train_num_episode:1.1f}%)  "
+                    f"Reference length: {reference_length_meter.avg:.4f}, "
+                    f"Predicted length: {predicted_length_meter.avg:.4f}, "
+                    f"Loss: {loss_meter.avg:.4f}"
+                )
 
         return reference_length_meter.avg, predicted_length_meter.avg, loss_meter.avg
 
-    def _train_one_batch(self, episode, batch_size):
+    def _train_one_batch(self, batch_offset, batch_size):
         """One batch: teacher-forced cross-entropy over MDP steps."""
         self.model.train()
-        self.env.load_problems(episode, batch_size, train=True)
-        self.env.reset()
+        self.env.load_problems(batch_offset, batch_size, train=True)
         step_log_probs = torch.ones(size=(batch_size, 0), device=self.device)
-        state, _, _, done = self.env.pre_step()
-        self.model.prepare_instance(state=state)
+        result = self.env.reset()
+        self.model.prepare_instance(result.coordinates)
         current_step = 0
 
-        while not done:
+        while not result.done:
             if current_step == 0:
-                reference = self.env.solution[:, -1]
-                predicted = self.env.solution[:, -1]
+                teacher_node = self.env.label_tour[:, -1]
+                predicted_node = self.env.label_tour[:, -1]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             elif current_step == 1:
-                reference = self.env.solution[:, 0]
-                predicted = self.env.solution[:, 0]
+                teacher_node = self.env.label_tour[:, 0]
+                predicted_node = self.env.label_tour[:, 0]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             else:
                 output = self.model(
-                    state, self.env.reference_tour, self.env.solution, current_step
+                    self.env.constructed_tour, self.env.label_tour, current_step
                 )
-                reference = output.teacher_action
-                predicted = output.predicted_action
+                teacher_node = output.teacher_action
+                predicted_node = output.predicted_action
                 step_prob = output.step_prob
                 loss_mean = -step_prob.type(torch.float64).log().mean()
                 self.model.zero_grad()
@@ -180,10 +208,10 @@ class SupervisedTrainer:
                 self.optimizer.step()
 
             current_step += 1
-            state, _, _, done = self.env.step(reference, predicted)
+            result = self.env.step(teacher_node, predicted_node)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
 
-        reference_length = self.env.compute_tour_length(self.env.problems, self.env.reference_tour).mean().item()
-        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.predicted_tour).mean().item()
+        reference_length = self.env.compute_tour_length(self.env.problems, self.env.constructed_tour).mean().item()
+        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.model_tour).mean().item()
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()

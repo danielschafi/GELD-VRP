@@ -91,6 +91,21 @@ class LogData:
         """Return all recorded metric keys."""
         return self.keys
 
+    def to_epoch_records(self) -> list[dict]:
+        """Return one dict per epoch for CSV / pandas export."""
+        if not self.keys:
+            return []
+
+        epochs: dict[int, dict] = {}
+        for key in sorted(self.keys):
+            for epoch, value in self.data[key]:
+                epoch = int(epoch)
+                if epoch not in epochs:
+                    epochs[epoch] = {"epoch": epoch}
+                epochs[epoch][key] = float(value)
+
+        return [epochs[epoch] for epoch in sorted(epochs)]
+
 
 class TimeEstimator:
     """Simple ETA estimator for long-running loops."""

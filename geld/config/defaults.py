@@ -15,14 +15,14 @@ def default_model_params(mode: str = "train") -> dict:
     }
 
 
-def default_env_params(mode: str = "train", sub_path: bool = True) -> dict:
+def default_env_params(mode: str = "train", use_subpath_augmentation: bool = True) -> dict:
     """Default environment settings with LEHD TSP-100 training path."""
     training_path = sl_training_data_dir() / "train_TSP100_n100w-001.txt"
     return {
         "data_path": str(training_path),
         "mode": mode,
-        "sub_path": sub_path,
-        "test_in_tsplib": False,
+        "use_subpath_augmentation": use_subpath_augmentation,
+        "eval_tsplib": False,
     }
 
 
@@ -53,6 +53,7 @@ def default_trainer_params(use_cuda: bool = True, cuda_device_num: int = 0) -> d
         "logging": {
             "model_save_interval": 1,
             "img_save_interval": 3000,
+            "batch_log_interval": 50,
             "log_image_params_1": {
                 "json_foldername": "log_image_style",
                 "filename": "style_tsp_100.json",

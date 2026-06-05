@@ -10,7 +10,8 @@ from geld.config.defaults import (
     default_trainer_params,
 )
 from geld.training.sl_trainer import SupervisedTrainer
-from geld.utils.logging import copy_all_src, create_logger
+from geld.utils.experiment_tracker import ExperimentTracker
+from geld.utils.logging import copy_all_src, create_logger, get_result_folder
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--wandb", action="store_true", help="Log metrics to Weights & Biases")
+    parser.add_argument("--wandb-project", type=str, default="geld")
+    parser.add_argument("--wandb-run-name", type=str, default=None)
+    parser.add_argument("--batch-log-interval", type=int, default=None, help="Log every N batches (default: 50)")
     return parser
 
 
@@ -43,11 +48,26 @@ def main():
     trainer_params["epochs"] = args.epochs
     trainer_params["train_episodes"] = args.train_episodes
     trainer_params["train_batch_size"] = args.batch_size
+    if args.batch_log_interval is not None:
+        trainer_params["logging"]["batch_log_interval"] = args.batch_log_interval
 
     logger = logging.getLogger("root")
     logger.info(f"Starting SL training with params: {trainer_params}")
 
-    trainer = SupervisedTrainer(env_params, model_params, optimizer_params, trainer_params)
+    tracker = ExperimentTracker(
+        get_result_folder(),
+        run_type="train_sl",
+        wandb_enabled=args.wandb,
+        wandb_project=args.wandb_project,
+        wandb_run_name=args.wandb_run_name,
+        wandb_config={
+            "env_params": env_params,
+            "model_params": model_params,
+            "optimizer_params": optimizer_params,
+            "trainer_params": trainer_params,
+        },
+    )
+    trainer = SupervisedTrainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)
     copy_all_src(trainer.result_folder)
     trainer.run()
 

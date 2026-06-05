@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from geld.env.base import StepState
 from geld.model.geld_model import GeldModel
 from geld.paths import project_root
 
@@ -36,9 +35,8 @@ def test_geld_model_forward_greedy_step(default_model_params):
     model.eval()
     batch_size = 2
     num_nodes = 20
-    coords = torch.rand(batch_size, num_nodes, 2)
-    state = StepState(data=coords)
-    model.prepare_instance(state)
-    selected = torch.zeros(batch_size, 1, dtype=torch.long)
-    output = model(state, selected, None, current_step=1)
+    coordinates = torch.rand(batch_size, num_nodes, 2)
+    model.prepare_instance(coordinates)
+    constructed_tour = torch.zeros(batch_size, 1, dtype=torch.long)
+    output = model(constructed_tour, None, current_step=1)
     assert output.predicted_action.shape == (batch_size,)

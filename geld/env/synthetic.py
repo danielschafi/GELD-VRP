@@ -24,18 +24,18 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         self.raw_data_nodes_100 = []
         self.raw_data_tours_100 = []
 
-    def load_problems(self, episode, batch_size, mix_curriculum_sizes=False, train=False):
+    def load_problems(self, batch_offset, batch_size, mix_curriculum_sizes=False, train=False):
         """Load a training batch with optional curriculum mixing and augmentation."""
-        self.episode = episode
+        self.batch_offset = batch_offset
         self.batch_size = batch_size
 
         if mix_curriculum_sizes:
             index = random.sample(range(1_000_000), batch_size)
             problems_small = self.raw_data_nodes_100[index]
             solution_small = self.raw_data_tours_100[index]
-            problems_large = self.raw_data_nodes[episode : episode + batch_size]
-            solution_large = self.raw_data_tours[episode : episode + batch_size]
-            if self.sub_path:
+            problems_large = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
+            solution_large = self.raw_data_tours[batch_offset : batch_offset + batch_size]
+            if self.use_subpath_augmentation:
                 problems_large, solution_large = sample_training_subpath(
                     problems_large, solution_large, mode="train", low_index=101
                 )
@@ -50,16 +50,16 @@ class SyntheticEnvironment(TSPEnvironmentBase):
             )
             solution_small = torch.cat((prefix_indices, solution_small + node_gap), dim=1)
             self.problems = torch.cat((problems_small, problems_large), dim=0)
-            self.solution = torch.cat((solution_small, solution_large), dim=0)
+            self.label_tour = torch.cat((solution_small, solution_large), dim=0)
             self.batch_size = batch_size * 2
         else:
-            self.problems = self.raw_data_nodes[episode : episode + batch_size]
-            self.solution = self.raw_data_tours[episode : episode + batch_size]
-            if self.sub_path:
-                self.problems, self.solution = sample_training_subpath(
-                    self.problems, self.solution, mode="train"
+            self.problems = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
+            self.label_tour = self.raw_data_tours[batch_offset : batch_offset + batch_size]
+            if self.use_subpath_augmentation:
+                self.problems, self.label_tour = sample_training_subpath(
+                    self.problems, self.label_tour, mode="train"
                 )
-            self.solution = maybe_reverse_tour(self.solution)
+            self.label_tour = maybe_reverse_tour(self.label_tour)
             self.problem_size = self.problems.shape[1]
 
         if train:
@@ -73,7 +73,7 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         self.raw_data_nodes = self.raw_data_nodes[index]
         self.raw_data_tours = self.raw_data_tours[index]
 
-    def load_problems_for_epoch(self, batch_size, problem_size):
+    def generate_random_instances(self, batch_size, problem_size):
         """Generate random uniform TSP instances for stage-2 SIL."""
         self.batch_size = batch_size
         self.problem_size = problem_size
@@ -82,16 +82,16 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         )
         self.raw_data_tours = None
 
-    def load_problems_val(self, episode, batch_size, rotation_id=0):
+    def load_problems_val(self, batch_offset, batch_size, rotation_id=0):
         """Load validation coordinates with optional ×8 data augmentation."""
-        self.problems = self.raw_data_nodes[episode : episode + batch_size]
+        self.problems = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
         if rotation_id != 0:
             self.problems = apply_rotation(self.problems, rotation_id)
-        self.solution = None
+        self.label_tour = None
 
     def load_raw_data(
         self,
-        episode,
+        num_instances,
         begin_index=0,
         load_eval_data=True,
         load_synthetic_benchmark=False,
@@ -110,7 +110,7 @@ class SyntheticEnvironment(TSPEnvironmentBase):
                 nodes_list = []
                 tours_list = []
                 with open(self.data_path, "r", encoding="utf-8") as data_file:
-                    lines = data_file.readlines()[begin_index : episode + begin_index]
+                    lines = data_file.readlines()[begin_index : num_instances + begin_index]
                 for line in tqdm(lines, ascii=True):
                     nodes, tour = load_lehd_line(line)
                     nodes_list.append(nodes)
@@ -122,7 +122,7 @@ class SyntheticEnvironment(TSPEnvironmentBase):
             nodes_list = []
             tours_list = []
             with open(self.data_path, "r", encoding="utf-8") as data_file:
-                lines = data_file.readlines()[begin_index : episode + begin_index]
+                lines = data_file.readlines()[begin_index : num_instances + begin_index]
             for line in tqdm(lines, ascii=True):
                 nodes, tour = load_lehd_line(line)
                 nodes_list.append(nodes)

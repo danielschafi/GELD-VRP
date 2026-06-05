@@ -8,17 +8,13 @@ from geld.model.geometry import tour_length
 
 
 @dataclass
-class ResetState:
-    """Environment state returned after reset."""
+class StepResult:
+    """Result of reset() or step() during autoregressive tour construction."""
 
-    problems: torch.Tensor
-
-
-@dataclass
-class StepState:
-    """Environment state at the current MDP step."""
-
-    data: torch.Tensor
+    coordinates: torch.Tensor
+    reference_length: torch.Tensor | float | None = None
+    predicted_length: torch.Tensor | float | None = None
+    done: bool = False
 
 
 class TSPEnvironmentBase:
@@ -28,16 +24,15 @@ class TSPEnvironmentBase:
         self.env_params = env_params
         self.problem_size = None
         self.data_path = env_params.get("data_path")
-        self.sub_path = env_params.get("sub_path", False)
-        self.test_in_tsplib = env_params.get("test_in_tsplib", False)
+        self.use_subpath_augmentation = env_params.get("use_subpath_augmentation", False)
+        self.eval_tsplib = env_params.get("eval_tsplib", False)
         self.batch_size = None
         self.problems = None
-        self.solution = None
-        self.selected_count = None
-        self.reference_tour = None
-        self.predicted_tour = None
-        self.episode = None
-        self.step_state = None
+        self.label_tour = None
+        self.nodes_selected = None
+        self.constructed_tour = None
+        self.model_tour = None
+        self.batch_offset = None
         self.tsplib_cost = None
         self.tsplib_name = None
         self.device = torch.device("cpu")
@@ -47,7 +42,7 @@ class TSPEnvironmentBase:
         self.device = device
         tensor_attrs = (
             "problems",
-            "solution",
+            "label_tour",
             "raw_data_nodes",
             "raw_data_tours",
             "raw_data_nodes_100",
@@ -65,66 +60,66 @@ class TSPEnvironmentBase:
         """Move the active batch tensors to the environment device."""
         if self.problems is not None:
             self.problems = self.problems.to(self.device)
-        if isinstance(self.solution, torch.Tensor):
-            self.solution = self.solution.to(self.device)
+        if isinstance(self.label_tour, torch.Tensor):
+            self.label_tour = self.label_tour.to(self.device)
         return self
 
-    def reset(self, batch_size=None):
-        """Start a new tour-construction episode."""
+    def reset(self, batch_size=None) -> StepResult:
+        """Start a new tour-construction episode and return the initial coordinates."""
         if batch_size is not None:
             self.batch_size = batch_size
-        self.reference_tour = torch.zeros(
+        self.constructed_tour = torch.zeros(
             (self.batch_size, 0), dtype=torch.long, device=self.problems.device
         )
-        self.predicted_tour = torch.zeros(
+        self.model_tour = torch.zeros(
             (self.batch_size, 0), dtype=torch.long, device=self.problems.device
         )
-        self.selected_count = 0
-        self.step_state = StepState(data=self.problems)
-        return ResetState(self.problems), None, False
+        self.nodes_selected = 0
+        return StepResult(coordinates=self.problems, done=False)
 
-    def pre_step(self):
-        """Return current step state before the model selects the next node."""
-        return self.step_state, None, None, False
-
-    def step(self, reference_action, predicted_action):
+    def step(self, teacher_node, predicted_node) -> StepResult:
         """Append selected nodes and compute tour lengths when the tour completes."""
-        self.selected_count += 1
-        self.reference_tour = torch.cat((self.reference_tour, reference_action[:, None]), dim=1)
-        self.predicted_tour = torch.cat((self.predicted_tour, predicted_action[:, None]), dim=1)
-        done = self.selected_count == self.problems.shape[1]
+        self.nodes_selected += 1
+        self.constructed_tour = torch.cat((self.constructed_tour, teacher_node[:, None]), dim=1)
+        self.model_tour = torch.cat((self.model_tour, predicted_node[:, None]), dim=1)
+        done = self.nodes_selected == self.problems.shape[1]
         if done:
-            reference_length = self.compute_tour_length(self.problems, self.reference_tour)
-            predicted_length = self.compute_tour_length(self.problems, self.predicted_tour)
-            return self.step_state, reference_length, predicted_length, done
-        return self.step_state, None, None, done
+            reference_length = self.compute_tour_length(self.problems, self.constructed_tour)
+            predicted_length = self.compute_tour_length(self.problems, self.model_tour)
+            return StepResult(
+                coordinates=self.problems,
+                reference_length=reference_length,
+                predicted_length=predicted_length,
+                done=done,
+            )
+        return StepResult(coordinates=self.problems, done=done)
 
-    def step_beam(self, selected, beam=16):
+    def step_beam(self, selected_node, beam=16) -> StepResult:
         """Advance beam-expanded tours and return lengths when done."""
-        self.selected_count += 1
-        self.reference_tour = torch.cat((self.reference_tour, selected[:, None]), dim=1)
-        done = self.selected_count == self.problems.shape[1]
+        self.nodes_selected += 1
+        self.constructed_tour = torch.cat((self.constructed_tour, selected_node[:, None]), dim=1)
+        done = self.nodes_selected == self.problems.shape[1]
         if done:
             expanded = torch.repeat_interleave(self.problems, beam, 0)
-            tour_lengths = self.compute_tour_length(expanded, self.reference_tour)
-            return self.step_state, tour_lengths, done
-        return self.step_state, None, done
+            tour_lengths = self.compute_tour_length(expanded, self.constructed_tour)
+            return StepResult(coordinates=self.problems, reference_length=tour_lengths, done=done)
+        return StepResult(coordinates=self.problems, done=done)
 
-    def compute_tour_length(self, problems, solution, need_optimal: bool = False):
+    def compute_tour_length(self, problems, tour, return_known_optimal: bool = False):
         """Compute L(π); return known optimal length for TSPLIB when requested."""
-        if self.test_in_tsplib and need_optimal:
+        if self.eval_tsplib and return_known_optimal:
             return self.tsplib_cost, self.tsplib_name
-        if self.test_in_tsplib and self.solution is None and not need_optimal:
+        if self.eval_tsplib and self.label_tour is None and not return_known_optimal:
             problems = problems.clone().detach()
-        return tour_length(problems, solution)
+        return tour_length(problems, tour)
 
-    def reference_and_predicted_length(self):
-        """Return reference (optimal/label) and predicted tour lengths."""
-        if self.test_in_tsplib:
+    def label_and_model_length(self):
+        """Return label (optimal/teacher) and model tour lengths."""
+        if self.eval_tsplib:
             reference = self.tsplib_cost
-        elif self.solution is not None:
-            reference = tour_length(self.problems, self.solution)
+        elif self.label_tour is not None:
+            reference = tour_length(self.problems, self.label_tour)
         else:
             reference = 0
-        predicted = tour_length(self.problems, self.predicted_tour)
+        predicted = tour_length(self.problems, self.model_tour)
         return reference, predicted

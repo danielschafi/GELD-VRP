@@ -16,18 +16,18 @@ logger = getLogger(__name__)
 class TSPLIBEnvironment(TSPEnvironmentBase):
     """Environment for TSPLIB and National TSP benchmark evaluation."""
 
-    def load_problems(self, episode, batch_size, name=None, opt_len=None, use_tsplib_dir=False, **_kwargs):
+    def load_problems(self, batch_offset, batch_size, name=None, opt_len=None, use_tsplib_dir=False, **_kwargs):
         """Load LEHD batch or a single real-world TSP instance."""
-        self.episode = episode
+        self.batch_offset = batch_offset
         self.batch_size = batch_size
-        if not self.test_in_tsplib:
-            self.problems = self.raw_data_nodes[episode : episode + batch_size]
-            self.solution = self.raw_data_tours[episode : episode + batch_size]
-            if self.sub_path:
-                self.problems, self.solution = sample_training_subpath(
-                    self.problems, self.solution, mode="train"
+        if not self.eval_tsplib:
+            self.problems = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
+            self.label_tour = self.raw_data_tours[batch_offset : batch_offset + batch_size]
+            if self.use_subpath_augmentation:
+                self.problems, self.label_tour = sample_training_subpath(
+                    self.problems, self.label_tour, mode="train"
                 )
-            self.solution = maybe_reverse_tour(self.solution)
+            self.label_tour = maybe_reverse_tour(self.label_tour)
         else:
             self.tsplib_name = name
             self.tsplib_cost = opt_len
@@ -35,17 +35,17 @@ class TSPLIBEnvironment(TSPEnvironmentBase):
                 root=benchmark_data_dir(), tsplib_name=name, use_tsplib_dir=use_tsplib_dir
             )
             self.problems = instance.reshape(1, -1, 2)
-            self.solution = None
+            self.label_tour = None
         self.problem_size = self.problems.shape[1]
         self.sync_batch_to_device()
 
-    def load_raw_data(self, episode, begin_index=0):
+    def load_raw_data(self, num_instances, begin_index=0):
         """Load LEHD training instances into raw tensors."""
         logger.info("Loading raw dataset...")
         nodes_list = []
         tours_list = []
         with open(self.data_path, "r", encoding="utf-8") as data_file:
-            lines = data_file.readlines()[begin_index : episode + begin_index]
+            lines = data_file.readlines()[begin_index : num_instances + begin_index]
         for line in tqdm(lines, ascii=True):
             nodes, tour = load_lehd_line(line)
             nodes_list.append(nodes)

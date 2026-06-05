@@ -70,15 +70,14 @@ class GeldModel(nn.Module):
         """Load weights after remapping legacy decoder key names."""
         return super().load_state_dict(self._remap_legacy_state_dict(state_dict), strict=strict)
 
-    def prepare_instance(self, state, normalize: bool = True):
+    def prepare_instance(self, coordinates, normalize: bool = True):
         """Normalize topology, build distance matrix, and assign RALA regions."""
-        data = state.data
         if normalize:
-            self.data = normalize_coordinates(data)
+            self.data = normalize_coordinates(coordinates)
         else:
-            self.data = data
+            self.data = coordinates
 
-        if data.size(1) > LARGE_INSTANCE_THRESHOLD:
+        if coordinates.size(1) > LARGE_INSTANCE_THRESHOLD:
             self.decoder.data = self.data
             self.dis_matrix = compute_distance_matrix(self.data, LARGE_INSTANCE_THRESHOLD)
         else:
@@ -87,9 +86,8 @@ class GeldModel(nn.Module):
 
     def forward(
         self,
-        state,
-        selected_tour,
-        solution,
+        constructed_tour,
+        label_tour,
         current_step,
         repair=False,
         beam_search=False,
@@ -97,13 +95,13 @@ class GeldModel(nn.Module):
         reencode_each_step=False,
     ):
         """One MDP step: teacher forcing (SL), greedy, beam search, or RC repair."""
-        batch_size = selected_tour.size(0)
+        batch_size = constructed_tour.size(0)
 
         if self.mode == "train" and self.training:
             encoded_nodes = self.encoder(self.data, self.region)
-            probs = self.decoder(encoded_nodes, selected_tour, self.dis_matrix)
+            probs = self.decoder(encoded_nodes, constructed_tour, self.dis_matrix)
             predicted = probs.argmax(dim=1)
-            teacher = solution[:, current_step - 1]
+            teacher = label_tour[:, current_step - 1]
             step_prob = probs[torch.arange(batch_size)[:, None], teacher[:, None]].reshape(batch_size, 1)
             return DecodeStepOutput(
                 teacher_action=teacher,
@@ -117,13 +115,13 @@ class GeldModel(nn.Module):
                     self.encoded_nodes = self.encoder(self.data, self.region)
 
                 if not beam_search:
-                    probs = self.decoder(self.encoded_nodes, selected_tour, self.dis_matrix)
+                    probs = self.decoder(self.encoded_nodes, constructed_tour, self.dis_matrix)
                     predicted = probs.argmax(dim=1)
                     return DecodeStepOutput(predicted_action=predicted)
 
                 transition_probs = self.decoder(
                     self.encoded_nodes,
-                    selected_tour,
+                    constructed_tour,
                     self.dis_matrix,
                     beam_search=True,
                     beam_size=beam_size,
@@ -132,6 +130,6 @@ class GeldModel(nn.Module):
 
             if current_step <= 2:
                 self.encoded_nodes = self.encoder(self.data, self.region)
-            probs = self.decoder(self.encoded_nodes, selected_tour, self.dis_matrix)
+            probs = self.decoder(self.encoded_nodes, constructed_tour, self.dis_matrix)
             predicted = probs.argmax(dim=1)
             return DecodeStepOutput(predicted_action=predicted)

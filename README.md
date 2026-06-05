@@ -82,11 +82,43 @@ uv run geld-eval-tsplib --tsplib --checkpoint-path result/pre_trained_model --ch
 uv run pytest
 ```
 
+## Experiment logging
+
+Each run writes a timestamped folder under `result/` with structured artifacts:
+
+| File | When | Use |
+|------|------|-----|
+| `log.txt` | always | Human-readable text log |
+| `metrics.csv` | training | One row per epoch — load directly in pandas |
+| `metrics.json` | training | Same metrics plus run metadata |
+| `plots/*.png` | training | Matplotlib curves (loss, lengths, …) |
+| `eval_synthetic_summary.csv` | synthetic eval | Size × distribution gap table |
+| `eval_instances.csv` | TSPLIB / postprocess | Per-instance gaps |
+| `eval_summary.json` | evaluation | Aggregated gap and bucket stats |
+
+Example — load training curves in pandas:
+
+```python
+import pandas as pd
+df = pd.read_csv("result/20260101_120000_train_sl/metrics.csv")
+df.plot(x="epoch", y=["train_loss", "train_reference_length"])
+```
+
+Optional Weights & Biases logging:
+
+```bash
+uv sync --extra wandb
+uv run geld-train-sl --wandb --wandb-run-name sl-baseline
+```
+
+Training batch progress is logged every 50 batches by default (plus 10% milestones). Override with `--batch-log-interval`.
+
 ## Dependencies
 
 - Python >= 3.9
 - PyTorch >= 2.2.2
 - numpy, matplotlib, tqdm, pytz
+- wandb (optional, `uv sync --extra wandb`)
 
 ## Acknowledgements
 

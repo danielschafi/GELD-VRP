@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov"]
+wandb = ["wandb>=0.16.0"]
 
 [project.scripts]
 geld-train-sl = "geld.cli.train_sl:main"

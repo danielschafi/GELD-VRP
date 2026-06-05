@@ -9,7 +9,8 @@ import torch
 
 from geld.config.defaults import default_env_params, default_eval_params, default_model_params
 from geld.inference.evaluator import EvalMode, InferenceEvaluator
-from geld.utils.logging import copy_all_src, create_logger
+from geld.utils.experiment_tracker import ExperimentTracker
+from geld.utils.logging import copy_all_src, create_logger, get_result_folder
 
 
 def seed_everything(seed=2024):
@@ -33,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--no-beam", action="store_true")
     parser.add_argument("--no-prc", action="store_true")
+    parser.add_argument("--wandb", action="store_true", help="Log evaluation metrics to Weights & Biases")
+    parser.add_argument("--wandb-project", type=str, default="geld")
+    parser.add_argument("--wandb-run-name", type=str, default=None)
     return parser
 
 
@@ -42,7 +46,7 @@ def main():
     create_logger(log_file={"desc": "eval_synthetic", "filename": "log.txt"})
     seed_everything(2024)
 
-    env_params = default_env_params(mode="test", sub_path=False)
+    env_params = default_env_params(mode="test", use_subpath_augmentation=False)
     model_params = default_model_params(mode="test")
     eval_params = default_eval_params(use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device)
     eval_params["model_load"] = {"path": args.checkpoint_path, "epoch": args.checkpoint_epoch}
@@ -51,6 +55,16 @@ def main():
 
     distributions = ["uniform", "clustered", "explosion", "implosion"]
     sizes = [100, 500, 1000, 5000, 10000]
+    result_folder = get_result_folder()
+    tracker = ExperimentTracker(
+        result_folder,
+        run_type="eval_synthetic",
+        wandb_enabled=args.wandb,
+        wandb_project=args.wandb_project,
+        wandb_run_name=args.wandb_run_name,
+        wandb_config={"eval_params": eval_params},
+    )
+    copy_all_src(result_folder)
 
     for distribution in distributions:
         for size in sizes:
@@ -70,9 +84,19 @@ def main():
             logging.getLogger("root").info(
                 f"Evaluating size={size}, distribution={distribution}"
             )
-            evaluator = InferenceEvaluator(env_params, model_params, eval_params, mode=EvalMode.SYNTHETIC)
-            copy_all_src(evaluator.result_folder)
-            evaluator.run(size=size, distribution=distribution)
+            evaluator = InferenceEvaluator(
+                env_params,
+                model_params,
+                eval_params,
+                mode=EvalMode.SYNTHETIC,
+                tracker=tracker,
+            )
+            summary = evaluator.run(size=size, distribution=distribution)
+            logging.getLogger("root").info(
+                f"Summary size={size} distribution={distribution} gap={summary.average_gap_percent:.4f}%"
+            )
+
+    tracker.finish()
 
 
 if __name__ == "__main__":

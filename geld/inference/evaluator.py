@@ -13,6 +13,7 @@ from geld.model.geld_model import GeldModel
 from geld.paths import baseline_solutions_dir
 from geld.search.solver import InferenceSolver
 from geld.utils.device import setup_device
+from geld.utils.experiment_tracker import EvalInstanceResult, EvalSummary, ExperimentTracker
 from geld.utils.logging import get_result_folder
 from geld.utils.metrics import AverageMeter, TimeEstimator
 
@@ -44,11 +45,23 @@ def _record_gap(gap_buckets: dict[str, list[float]], problem_size: int, gap: flo
     gap_buckets[_gap_bucket_key(problem_size)].append(gap)
 
 
-def _print_gap_bucket_means(gap_buckets: dict[str, list[float]]) -> None:
-    """Print mean gap per TSP scale bucket."""
+def _gap_bucket_means(gap_buckets: dict[str, list[float]]) -> tuple[dict[str, float], dict[str, int]]:
+    """Compute mean gap and count per TSP scale bucket."""
+    means = {}
+    counts = {}
     for label, gaps in gap_buckets.items():
         if gaps:
-            print(f"problems_{label} mean gap:", np.mean(gaps), len(gaps))
+            means[label] = float(np.mean(gaps) * 100.0)
+            counts[label] = len(gaps)
+    return means, counts
+
+
+def _log_gap_bucket_means(logger, gap_buckets: dict[str, list[float]]) -> tuple[dict[str, float], dict[str, int]]:
+    """Log mean gap per TSP scale bucket."""
+    means, counts = _gap_bucket_means(gap_buckets)
+    for label, mean_gap in means.items():
+        logger.info(f"problems_{label} mean gap: {mean_gap:.4f}% ({counts[label]} instances)")
+    return means, counts
 
 
 class EvalMode(Enum):
@@ -62,7 +75,14 @@ class EvalMode(Enum):
 class InferenceEvaluator:
     """Unified evaluator for standalone solving and PRC post-processing."""
 
-    def __init__(self, env_params, model_params, eval_params, mode: EvalMode = EvalMode.SYNTHETIC):
+    def __init__(
+        self,
+        env_params,
+        model_params,
+        eval_params,
+        mode: EvalMode = EvalMode.SYNTHETIC,
+        tracker: ExperimentTracker | None = None,
+    ):
         self.env_params = env_params
         self.model_params = model_params
         self.eval_params = eval_params
@@ -70,6 +90,7 @@ class InferenceEvaluator:
 
         self.logger = getLogger(name="evaluator")
         self.result_folder = get_result_folder()
+        self.tracker = tracker
         self.device = setup_device(eval_params["use_cuda"], eval_params["cuda_device_num"])
 
         if mode == EvalMode.SYNTHETIC:
@@ -108,17 +129,19 @@ class InferenceEvaluator:
             return self._run_postprocess()
         return self.run_tsplib(use_tsplib_dir=False)
 
-    def run_tsplib(self, use_tsplib_dir: bool = False):
+    def run_tsplib(self, use_tsplib_dir: bool = False) -> EvalSummary:
         """Evaluate all TSPLIB or National TSP instances."""
         collections = TSPLIB_OPTIMAL_LENGTHS if use_tsplib_dir else NATIONAL_TSP_OPTIMAL_LENGTHS
         gap_buckets = _new_gap_buckets()
         all_gaps = []
+        instances: list[EvalInstanceResult] = []
         baseline_length_meter = AverageMeter()
         predicted_length_meter = AverageMeter()
 
         for name, opt_len in collections.items():
             instance_name = name if use_tsplib_dir else name.lower()
             result = self.solver.solve_batch(
+                0,
                 1,
                 reencode_each_step=use_tsplib_dir,
                 load_kwargs={
@@ -133,21 +156,44 @@ class InferenceEvaluator:
             all_gaps.append(gap)
             baseline_length_meter.update(baseline, 1)
             predicted_length_meter.update(predicted, 1)
+            bucket = _gap_bucket_key(self.env.problem_size)
             _record_gap(gap_buckets, self.env.problem_size, gap)
+            instances.append(
+                EvalInstanceResult(
+                    name=name,
+                    problem_size=self.env.problem_size,
+                    baseline_length=baseline,
+                    predicted_length=predicted,
+                    gap_percent=gap * 100.0,
+                    gap_bucket=bucket,
+                )
+            )
 
             self.logger.info(
                 f"PRC, name:{name}, gap:{gap * 100:5f} %, "
                 f"predicted:{predicted:5f}, optimal:{baseline:5f}"
             )
 
-        _print_gap_bucket_means(gap_buckets)
+        bucket_means, bucket_counts = _log_gap_bucket_means(self.logger, gap_buckets)
 
-        average_gap = np.mean(all_gaps)
+        average_gap = float(np.mean(all_gaps) * 100.0)
         self.logger.info(" *** Test Done *** ")
-        self.logger.info(f" Average Gap: {average_gap * 100:.4f}%")
-        return baseline_length_meter.avg, predicted_length_meter.avg, average_gap
+        self.logger.info(f" Average Gap: {average_gap:.4f}%")
+        summary = EvalSummary(
+            mode="tsplib" if use_tsplib_dir else "national",
+            average_gap_percent=average_gap,
+            baseline_length_avg=baseline_length_meter.avg,
+            predicted_length_avg=predicted_length_meter.avg,
+            num_instances=len(instances),
+            bucket_means=bucket_means,
+            bucket_counts=bucket_counts,
+            instances=instances,
+        )
+        if self.tracker is not None:
+            self.tracker.save_eval_results(summary)
+        return summary
 
-    def _run_synthetic(self, size, distribution):
+    def _run_synthetic(self, size, distribution) -> EvalSummary:
         """Evaluate synthetic TSP-n benchmarks across distributions."""
         self.env.load_raw_data(
             self.eval_params["test_episodes"],
@@ -180,15 +226,27 @@ class InferenceEvaluator:
         self.logger.info(f" Baseline length: {baseline_length_meter.avg:.4f} ")
         self.logger.info(f" Predicted length: {predicted_length_meter.avg:.4f} ")
         self.logger.info(f" Gap: {gap:.4f}%")
-        return baseline_length_meter.avg, predicted_length_meter.avg, gap
+        summary = EvalSummary(
+            mode="synthetic",
+            average_gap_percent=float(gap),
+            baseline_length_avg=baseline_length_meter.avg,
+            predicted_length_avg=predicted_length_meter.avg,
+            num_instances=test_num_episode,
+            size=size,
+            distribution=distribution,
+        )
+        if self.tracker is not None:
+            self.tracker.save_eval_results(summary)
+        return summary
 
-    def _run_postprocess(self):
+    def _run_postprocess(self) -> EvalSummary:
         """PRC-only refinement of baseline neural solver tours."""
         baseline_solutions = np.load(
             baseline_solutions_dir() / "INV_so.npy", allow_pickle=True
         ).item()
         gap_buckets = _new_gap_buckets()
         all_gaps = []
+        instances: list[EvalInstanceResult] = []
         baseline_length_meter = AverageMeter()
         predicted_length_meter = AverageMeter()
 
@@ -202,6 +260,7 @@ class InferenceEvaluator:
             )
             initial_tour = torch.tensor(solution, device=self.device).unsqueeze(0)
             result = self.solver.solve_batch(
+                0,
                 1,
                 skip_greedy=True,
                 skip_beam=True,
@@ -215,23 +274,46 @@ class InferenceEvaluator:
             all_gaps.append(gap)
             baseline_length_meter.update(baseline, 1)
             predicted_length_meter.update(predicted, 1)
+            bucket = _gap_bucket_key(self.env.problem_size)
             _record_gap(gap_buckets, self.env.problem_size, gap)
+            instances.append(
+                EvalInstanceResult(
+                    name=name,
+                    problem_size=self.env.problem_size,
+                    baseline_length=baseline,
+                    predicted_length=predicted,
+                    gap_percent=gap * 100.0,
+                    gap_bucket=bucket,
+                )
+            )
 
             self.logger.info(
                 f"PRC postprocess, name:{name}, gap:{gap * 100:5f} %, "
                 f"predicted:{predicted:5f}, optimal:{baseline:5f}"
             )
 
-        _print_gap_bucket_means(gap_buckets)
+        bucket_means, bucket_counts = _log_gap_bucket_means(self.logger, gap_buckets)
 
-        average_gap = np.mean(all_gaps)
+        average_gap = float(np.mean(all_gaps) * 100.0)
         self.logger.info(" *** Test Done *** ")
-        self.logger.info(f" Average Gap: {average_gap * 100:.4f}%")
-        return baseline_length_meter.avg, predicted_length_meter.avg, average_gap
+        self.logger.info(f" Average Gap: {average_gap:.4f}%")
+        summary = EvalSummary(
+            mode="postprocess",
+            average_gap_percent=average_gap,
+            baseline_length_avg=baseline_length_meter.avg,
+            predicted_length_avg=predicted_length_meter.avg,
+            num_instances=len(instances),
+            bucket_means=bucket_means,
+            bucket_counts=bucket_counts,
+            instances=instances,
+        )
+        if self.tracker is not None:
+            self.tracker.save_eval_results(summary)
+        return summary
 
     def _evaluate_batch(self, episode, batch_size):
         """Evaluate one synthetic batch and log gap to baseline."""
-        result = self.solver.solve_batch(episode, batch_size)
+        result = self.solver.solve_batch(batch_offset=episode, batch_size=batch_size)
         baseline = float(result.baseline_length.mean())
         predicted = float(result.tour_length.mean())
         gap = (predicted - baseline) / baseline * 100

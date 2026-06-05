@@ -28,24 +28,23 @@ def accept_repair_if_shorter(
 
 def run_repair_episode(model, env, subpath_length):
     """Greedy RC decode on a sub-topology to regenerate a sub-solution."""
-    env.reset()
-    state, _, _, done = env.pre_step()
-    model.prepare_instance(state=state)
+    result = env.reset()
+    model.prepare_instance(result.coordinates)
     current_step = 0
-    while not done:
+    while not result.done:
         if current_step == 0:
-            reference = env.solution[:, -1]
-            predicted = env.solution[:, -1]
+            teacher_node = env.label_tour[:, -1]
+            predicted_node = env.label_tour[:, -1]
         elif current_step == 1:
-            reference = env.solution[:, 0]
-            predicted = env.solution[:, 0]
+            teacher_node = env.label_tour[:, 0]
+            predicted_node = env.label_tour[:, 0]
         else:
-            output = model(state, env.reference_tour, env.solution, current_step, repair=True)
-            reference = output.action
-            predicted = output.predicted_action
+            output = model(env.constructed_tour, env.label_tour, current_step, repair=True)
+            teacher_node = output.action
+            predicted_node = output.predicted_action
         current_step += 1
-        state, _, _, done = env.step(reference, predicted)
-    return torch.roll(env.reference_tour, shifts=-1, dims=1)
+        result = env.step(teacher_node, predicted_node)
+    return torch.roll(env.constructed_tour, shifts=-1, dims=1)
 
 
 def apply_prc_iteration(
@@ -71,11 +70,11 @@ def apply_prc_iteration(
         origin_problem, current_tour, segment_indices, subpath_length
     )
     env.problems = new_problem.view(-1, subpath_length, 2)
-    env.solution = new_solution.view(-1, subpath_length)
+    env.label_tour = new_solution.view(-1, subpath_length)
     env.batch_size = env.problems.size(0)
-    length_before = env.compute_tour_length(env.problems, env.solution)
+    length_before = env.compute_tour_length(env.problems, env.label_tour)
     repaired_sub = run_repair_episode(model, env, subpath_length)
-    length_after = env.compute_tour_length(env.problems, env.predicted_tour)
+    length_after = env.compute_tour_length(env.problems, env.model_tour)
     return accept_repair_if_shorter(
         repaired_sub,
         length_before,
