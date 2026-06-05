@@ -66,7 +66,8 @@ class CurriculumTrainer:
     def run(self):
         """Run curriculum SIL from TSP-k_m toward n_max."""
         self.time_estimator.reset(self.start_epoch)
-        self.env.load_raw_data(1_000_000, load_eval_data=False)
+        curriculum_episodes = self.trainer_params.get("curriculum_data_episodes", 1_000_000)
+        self.env.load_raw_data(curriculum_episodes, load_eval_data=False)
         self.env.set_device(self.device)
         problem_size_init = self.trainer_params["problem_size_init"]
         problem_size_max = self.trainer_params["problem_size_max"]
@@ -226,8 +227,10 @@ class CurriculumTrainer:
         )
 
     @torch.no_grad()
-    def _run_prc_training(self, tours, num_iterations=1000):
+    def _run_prc_training(self, tours, num_iterations=None):
         """Apply PRC iterations to improve tour pseudo-labels."""
+        if num_iterations is None:
+            num_iterations = self.trainer_params.get("prc_training_iterations", 1000)
         self.model.eval()
         val_num_episode = self.trainer_params["train_episodes"]
         problem_size = self.env.raw_data_nodes.size(1)
@@ -276,6 +279,7 @@ class CurriculumTrainer:
     @torch.no_grad()
     def _validation_beam(self, problem_size):
         """Beam search all training instances to obtain improved pseudo-labels."""
+        self.model.eval()
         tour_lengths = None
         tours = None
         episode = 0
@@ -292,6 +296,7 @@ class CurriculumTrainer:
     @torch.no_grad()
     def _validation_greedy(self):
         """Greedy decode all training instances for pseudo-label comparison."""
+        self.model.eval()
         tour_lengths = None
         tours = None
         episode = 0

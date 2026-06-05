@@ -30,7 +30,8 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         self.batch_size = batch_size
 
         if mix_curriculum_sizes:
-            index = random.sample(range(1_000_000), batch_size)
+            curriculum_size = len(self.raw_data_nodes_100)
+            index = random.sample(range(curriculum_size), batch_size)
             problems_small = self.raw_data_nodes_100[index]
             solution_small = self.raw_data_tours_100[index]
             problems_large = self.raw_data_nodes[batch_offset : batch_offset + batch_size]

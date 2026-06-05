@@ -67,6 +67,15 @@ def main():
         trainer_params["epochs"] = 2
         trainer_params["train_episodes"] = 8
         trainer_params["train_batch_size"] = 4
+        trainer_params["val_batch_size"] = 8
+        trainer_params["val_beam_batch_size"] = 8
+        trainer_params["curriculum_data_episodes"] = 64
+        trainer_params["prc_training_iterations"] = 2
+        trainer_params["max_limit"] = 1
+        trainer_params["per_batch"] = 1
+        trainer_params["beam_size"] = 4
+        trainer_params["problem_size_init"] = 101
+        trainer_params["problem_size_max"] = 150
     if args.batch_log_interval is not None:
         trainer_params["logging"]["batch_log_interval"] = args.batch_log_interval
 

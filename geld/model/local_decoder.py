@@ -197,8 +197,9 @@ class LocalDecoder(nn.Module):
             probs[nan_mask] = 1e-5
             probs[row_indices, 0] = 1
 
-        full_probs = torch.zeros(batch_size, problem_size, device=out.device) + 1e-5
-        batch_indices = torch.arange(batch_size, dtype=torch.long, device=out.device)[:, None]
+        output_batch_size = batch_size * beam_size if beam_search else batch_size
+        full_probs = torch.zeros(output_batch_size, problem_size, device=out.device) + 1e-5
+        batch_indices = torch.arange(output_batch_size, dtype=torch.long, device=out.device)[:, None]
         full_probs[batch_indices, unselected_nodes[:, 1:-1]] = probs
         full_probs[batch_indices, selected_tour] = 1e-20
         return full_probs

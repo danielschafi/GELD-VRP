@@ -128,6 +128,8 @@ def copy_all_src(dst_root: Path | str):
         if hasattr(module, "__file__") and module.__file__:
             src_abspath = os.path.abspath(module.__file__)
             if os.path.commonprefix([home_dir, src_abspath]) == home_dir and src_abspath.endswith(".py"):
+                if not os.path.isfile(src_abspath):
+                    continue
                 dst_filepath = dst_path / os.path.basename(src_abspath)
                 if dst_filepath.exists():
                     stem, suffix = dst_filepath.stem, dst_filepath.suffix

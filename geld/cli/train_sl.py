@@ -44,10 +44,10 @@ def main():
         trainer_params["epochs"] = 2
         trainer_params["train_episodes"] = 8
         trainer_params["train_batch_size"] = 4
-
-    trainer_params["epochs"] = args.epochs
-    trainer_params["train_episodes"] = args.train_episodes
-    trainer_params["train_batch_size"] = args.batch_size
+    else:
+        trainer_params["epochs"] = args.epochs
+        trainer_params["train_episodes"] = args.train_episodes
+        trainer_params["train_batch_size"] = args.batch_size
     if args.batch_log_interval is not None:
         trainer_params["logging"]["batch_log_interval"] = args.batch_log_interval
 
