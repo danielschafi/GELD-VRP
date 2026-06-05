@@ -1,0 +1,36 @@
+[project]
+name = "geld"
+version = "0.1.0"
+description = "GELD: Global-view Encoder and Local-view Decoder for TSP"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.2.2",
+    "numpy>=1.23.3",
+    "matplotlib>=3.8.3",
+    "tqdm>=4.66.2",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov"]
+
+[project.scripts]
+geld-train-sl = "geld.cli.train_sl:main"
+geld-train-stage2 = "geld.cli.train_stage2:main"
+geld-eval-synthetic = "geld.cli.eval_synthetic:main"
+geld-eval-tsplib = "geld.cli.eval_tsplib:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["geld"]
+
+[tool.hatch.build.targets.sdist]
+include = ["geld/**", "tests/**", "README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
