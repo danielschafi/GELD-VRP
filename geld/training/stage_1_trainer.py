@@ -18,7 +18,7 @@ from geld.utils.logging import (
 from geld.utils.metrics import AverageMeter, LogData, TimeEstimator
 
 
-class SupervisedTrainer:
+class TrainingStage1Trainer:
     """Stage-1 SL trainer on small-scale TSP-k_m instances."""
 
     def __init__(

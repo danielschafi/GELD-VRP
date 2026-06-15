@@ -3,19 +3,19 @@
 import argparse
 import logging
 
-from geld.config.defaults import (
+from geld.config.defaults_params import (
     default_env_params,
     default_model_params,
-    default_optimizer_params,
-    default_trainer_params,
+    default_training_stage_1_params,
+    default_training_stage_1_optimizer_params,
 )
-from geld.training.sl_trainer import SupervisedTrainer
+from geld.training.stage_1_trainer import TrainingStage1Trainer
 from geld.utils.experiment_tracker import ExperimentTracker
 from geld.utils.logging import create_logger, get_result_folder
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build argument parser for stage-1 SL training."""
+    """Build argument parser for stage-1 training."""
     parser = argparse.ArgumentParser(description="GELD stage-1 supervised training")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--train-episodes", type=int, default=1_000_000)
@@ -40,12 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     """Run stage-1 supervised learning on small-scale TSP instances."""
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "train_sl", "filename": "log.txt"})
+    create_logger(log_file={"desc": "train_stage_1", "filename": "log.txt"})
 
     env_params = default_env_params(mode="train")
     model_params = default_model_params(mode="train")
-    optimizer_params = default_optimizer_params()
-    trainer_params = default_trainer_params(
+    optimizer_params = default_training_stage_1_optimizer_params()
+    trainer_params = default_training_stage_1_params(
         use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device
     )
 
@@ -61,11 +61,11 @@ def main():
         trainer_params["logging"]["batch_log_interval"] = args.batch_log_interval
 
     logger = logging.getLogger("root")
-    logger.info(f"Starting SL training with params: {trainer_params}")
+    logger.info(f"Starting stage-1 training with params: {trainer_params}")
 
     tracker = ExperimentTracker(
         get_result_folder(),
-        run_type="train_sl",
+        run_type="train_stage_1",
         wandb_enabled=args.wandb,
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
@@ -76,7 +76,7 @@ def main():
             "trainer_params": trainer_params,
         },
     )
-    trainer = SupervisedTrainer(
+    trainer = TrainingStage1Trainer(
         env_params, model_params, optimizer_params, trainer_params, tracker=tracker
     )
     trainer.run()

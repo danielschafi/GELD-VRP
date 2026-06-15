@@ -1,4 +1,4 @@
-from geld.training.sl_trainer import SupervisedTrainer
+from geld.training.sl_trainer import TrainingStage1Trainer
 from geld.training.stage2_trainer import CurriculumTrainer
 
-__all__ = ["SupervisedTrainer", "CurriculumTrainer"]
+__all__ = ["TrainingStage1Trainer", "CurriculumTrainer"]
