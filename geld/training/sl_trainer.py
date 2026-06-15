@@ -10,14 +10,25 @@ from geld.env.synthetic import SyntheticEnvironment
 from geld.model.geld_model import GeldModel
 from geld.utils.device import setup_device
 from geld.utils.experiment_tracker import ExperimentTracker, should_log_batch
-from geld.utils.logging import get_result_folder, util_print_log_array, util_save_log_image_with_label
+from geld.utils.logging import (
+    get_result_folder,
+    util_print_log_array,
+    util_save_log_image_with_label,
+)
 from geld.utils.metrics import AverageMeter, LogData, TimeEstimator
 
 
 class SupervisedTrainer:
     """Stage-1 SL trainer on small-scale TSP-k_m instances."""
 
-    def __init__(self, env_params, model_params, optimizer_params, trainer_params, tracker: ExperimentTracker | None = None):
+    def __init__(
+        self,
+        env_params,
+        model_params,
+        optimizer_params,
+        trainer_params,
+        tracker: ExperimentTracker | None = None,
+    ):
         self.env_params = env_params
         self.model_params = model_params
         self.optimizer_params = optimizer_params
@@ -27,19 +38,25 @@ class SupervisedTrainer:
         self.result_folder = get_result_folder()
         self.result_log = LogData()
         self.tracker = tracker
-        self.device = setup_device(trainer_params["use_cuda"], trainer_params["cuda_device_num"])
+        self.device = setup_device(
+            trainer_params["use_cuda"], trainer_params["cuda_device_num"]
+        )
 
         torch.manual_seed(2024)
         self.model = GeldModel(**self.model_params).to(self.device)
         self.env = SyntheticEnvironment(**self.env_params)
         self.env.set_device(self.device)
-        self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params["optimizer"])
+        self.optimizer = Optimizer(
+            self.model.parameters(), **self.optimizer_params["optimizer"]
+        )
         self.scheduler = Scheduler(self.optimizer, **self.optimizer_params["scheduler"])
 
         self.start_epoch = 1
         model_load = trainer_params["model_load"]
         if model_load["enable"]:
-            checkpoint_path = f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
+            checkpoint_path = (
+                f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
+            )
             checkpoint = torch.load(checkpoint_path, map_location=self.device)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.start_epoch = 1 + model_load["epoch"]
@@ -57,11 +74,19 @@ class SupervisedTrainer:
         self.env.set_device(self.device)
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
-            self.logger.info("=================================================================")
+            self.logger.info(
+                "================================================================="
+            )
             self.env.shuffle_data()
-            train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
-            self.result_log.append("train_reference_length", epoch, train_reference_length)
-            self.result_log.append("train_predicted_length", epoch, train_predicted_length)
+            train_reference_length, train_predicted_length, train_loss = (
+                self._train_one_epoch(epoch)
+            )
+            self.result_log.append(
+                "train_reference_length", epoch, train_reference_length
+            )
+            self.result_log.append(
+                "train_predicted_length", epoch, train_predicted_length
+            )
             self.result_log.append("train_loss", epoch, train_loss)
             self.scheduler.step()
 
@@ -87,7 +112,10 @@ class SupervisedTrainer:
                 self.tracker.save_training_progress(
                     self.result_log,
                     logging_config=self.trainer_params.get("logging"),
-                    metadata={"run_type": "train_sl", "trainer_params": self.trainer_params},
+                    metadata={
+                        "run_type": "train_sl",
+                        "trainer_params": self.trainer_params,
+                    },
                     save_plots=epoch > 1,
                 )
 
@@ -145,7 +173,10 @@ class SupervisedTrainer:
                     self.tracker.save_training_progress(
                         self.result_log,
                         logging_config=self.trainer_params.get("logging"),
-                        metadata={"run_type": "train_sl", "trainer_params": self.trainer_params},
+                        metadata={
+                            "run_type": "train_sl",
+                            "trainer_params": self.trainer_params,
+                        },
                     )
                     self.tracker.finish()
 
@@ -156,12 +187,16 @@ class SupervisedTrainer:
         loss_meter = AverageMeter()
         train_num_episode = self.trainer_params["train_episodes"]
         episode = 0
-        batch_log_interval = self.trainer_params["logging"].get("batch_log_interval", 50)
+        batch_log_interval = self.trainer_params["logging"].get(
+            "batch_log_interval", 50
+        )
 
         while episode < train_num_episode:
             remaining = train_num_episode - episode
             batch_size = min(self.trainer_params["train_batch_size"], remaining)
-            reference_length, predicted_length, avg_loss = self._train_one_batch(episode, batch_size)
+            reference_length, predicted_length, avg_loss = self._train_one_batch(
+                episode, batch_size
+            )
             reference_length_meter.update(reference_length, batch_size)
             predicted_length_meter.update(predicted_length, batch_size)
             loss_meter.update(avg_loss, batch_size)
@@ -211,7 +246,15 @@ class SupervisedTrainer:
             result = self.env.step(teacher_node, predicted_node)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
 
-        reference_length = self.env.compute_tour_length(self.env.problems, self.env.constructed_tour).mean().item()
-        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.model_tour).mean().item()
+        reference_length = (
+            self.env.compute_tour_length(self.env.problems, self.env.constructed_tour)
+            .mean()
+            .item()
+        )
+        predicted_length = (
+            self.env.compute_tour_length(self.env.problems, self.env.model_tour)
+            .mean()
+            .item()
+        )
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()

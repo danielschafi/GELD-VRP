@@ -85,7 +85,9 @@ def save_metrics_json(
         json.dump(payload, json_file, indent=2)
 
 
-def save_training_plots(result_folder: Path, result_log: LogData, logging_config: dict | None = None) -> None:
+def save_training_plots(
+    result_folder: Path, result_log: LogData, logging_config: dict | None = None
+) -> None:
     """Save matplotlib PNG curves and legacy JPG plots when configured."""
     records = result_log.to_epoch_records()
     if not records:
@@ -114,7 +116,14 @@ def save_training_plots(result_folder: Path, result_log: LogData, logging_config
         fig, axis = plt.subplots(figsize=(8, 4))
         for metric_key in length_keys:
             values = [record[metric_key] for record in records]
-            axis.plot(epochs, values, marker="o", linewidth=1.5, markersize=3, label=metric_key)
+            axis.plot(
+                epochs,
+                values,
+                marker="o",
+                linewidth=1.5,
+                markersize=3,
+                label=metric_key,
+            )
         axis.set_xlabel("epoch")
         axis.set_ylabel("tour length")
         axis.set_title("tour lengths")
@@ -234,17 +243,23 @@ class ExperimentTracker:
     ) -> None:
         """Write metrics.csv/json and refresh training plots."""
         save_metrics_csv(result_log, self.result_folder / METRICS_CSV)
-        save_metrics_json(result_log, self.result_folder / METRICS_JSON, metadata=metadata)
+        save_metrics_json(
+            result_log, self.result_folder / METRICS_JSON, metadata=metadata
+        )
         if save_plots:
             save_training_plots(self.result_folder, result_log, logging_config)
 
     def save_eval_results(self, summary: EvalSummary) -> None:
         """Persist evaluation CSV/JSON artifacts."""
-        save_eval_instances_csv(summary.instances, self.result_folder / EVAL_INSTANCES_CSV)
+        save_eval_instances_csv(
+            summary.instances, self.result_folder / EVAL_INSTANCES_CSV
+        )
         save_eval_summary(summary, self.result_folder / EVAL_SUMMARY_JSON)
 
         if summary.mode == "synthetic":
-            append_eval_synthetic_row(summary, self.result_folder / EVAL_SYNTHETIC_SUMMARY_CSV)
+            append_eval_synthetic_row(
+                summary, self.result_folder / EVAL_SYNTHETIC_SUMMARY_CSV
+            )
 
         if self._wandb_run:
             import wandb

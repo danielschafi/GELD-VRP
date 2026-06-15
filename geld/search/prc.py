@@ -17,9 +17,13 @@ def accept_repair_if_shorter(
     expanded_indices = segment_indices.unsqueeze(1) + torch.arange(subpath_length)
     original_sub_tour = full_tour[:, expanded_indices]
     sorted_original, _ = torch.sort(original_sub_tour, dim=-1, descending=False)
-    repaired_mapped = sorted_original.gather(2, repaired_sub_tour.view(sorted_original.shape))
+    repaired_mapped = sorted_original.gather(
+        2, repaired_sub_tour.view(sorted_original.shape)
+    )
     should_repair = length_before > length_after
-    should_repair = should_repair.unsqueeze(1).view(sorted_original.shape[0], sorted_original.shape[1])
+    should_repair = should_repair.unsqueeze(1).view(
+        sorted_original.shape[0], sorted_original.shape[1]
+    )
     updated = full_tour[:, expanded_indices].clone()
     updated[should_repair] = repaired_mapped[should_repair]
     full_tour[:, expanded_indices] = updated
@@ -39,7 +43,9 @@ def run_repair_episode(model, env, subpath_length):
             teacher_node = env.label_tour[:, 0]
             predicted_node = env.label_tour[:, 0]
         else:
-            output = model(env.constructed_tour, env.label_tour, current_step, repair=True)
+            output = model(
+                env.constructed_tour, env.label_tour, current_step, repair=True
+            )
             teacher_node = output.action
             predicted_node = output.predicted_action
         current_step += 1
@@ -59,10 +65,14 @@ def apply_prc_iteration(
 ):
     """One PRC iteration: sample sub-solution, repair, accept if improved."""
     interval = problem_size // num_segments
-    segment_indices = torch.arange(0, problem_size, step=interval, dtype=torch.long)[:num_segments]
+    segment_indices = torch.arange(0, problem_size, step=interval, dtype=torch.long)[
+        :num_segments
+    ]
     if large_instance:
-        high_max = int(31622 / (num_segments ** 0.5))
-        subpath_length = torch.randint(low=4, high=min(high_max, max_subpath_length) + 1, size=[1])[0]
+        high_max = int(31622 / (num_segments**0.5))
+        subpath_length = torch.randint(
+            low=4, high=min(high_max, max_subpath_length) + 1, size=[1]
+        )[0]
     else:
         subpath_length = torch.randint(low=4, high=max_subpath_length + 1, size=[1])[0]
 
@@ -104,7 +114,9 @@ def run_prc_loop(
     best_tour = initial_tour
     working_problem = origin_problem
     for step in range(num_iterations):
-        num_segments = torch.randint(low=lower_segment_bound, high=sample_max + 1, size=[1])[0]
+        num_segments = torch.randint(
+            low=lower_segment_bound, high=sample_max + 1, size=[1]
+        )[0]
         max_subpath = problem_size // num_segments
         if step % 2 != 0:
             best_tour = torch.flip(best_tour, dims=[1])

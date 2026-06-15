@@ -8,21 +8,26 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def data_dir() -> Path:
+    """Path to data directory."""
+    return project_root() / "data"
+
+
 def benchmark_data_dir() -> Path:
     """Path to synthetic and real-world test datasets."""
-    return project_root() / "Test_data"
+    return data_dir() / "benchmark"
 
 
-def sl_training_data_dir() -> Path:
+def training_stage_1_data_dir() -> Path:
     """Path to stage-1 SL training data (LEHD TSP-100)."""
-    return project_root() / "SL_training_data"
+    return data_dir() / "training_stage_1"
 
 
 def baseline_solutions_dir() -> Path:
     """Path to baseline solver tours for PRC post-processing."""
-    return project_root() / "baseline_solutions"
+    return data_dir() / "baseline_solutions"
 
 
 def result_dir() -> Path:
     """Path to training and evaluation result outputs."""
-    return project_root() / "result"
+    return data_dir() / "result"

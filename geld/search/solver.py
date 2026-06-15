@@ -21,7 +21,16 @@ class SolveResult:
 class InferenceSolver:
     """Inference pipeline: greedy → beam search → PRC post-processing."""
 
-    def __init__(self, model, env, device, use_beam=True, use_prc=True, beam_size=16, prc_iterations=1000):
+    def __init__(
+        self,
+        model,
+        env,
+        device,
+        use_beam=True,
+        use_prc=True,
+        beam_size=16,
+        prc_iterations=1000,
+    ):
         self.model = model
         self.env = env
         self.device = device
@@ -51,7 +60,9 @@ class InferenceSolver:
         self.env.load_problems(batch_offset, batch_size, **load_kwargs)
         origin_problem = self.env.problems
         if self.env.label_tour is not None:
-            baseline_length = self.env.compute_tour_length(origin_problem, self.env.label_tour)
+            baseline_length = self.env.compute_tour_length(
+                origin_problem, self.env.label_tour
+            )
         elif self.env.tsplib_cost is not None:
             baseline_length = self.env.tsplib_cost
         else:
@@ -69,7 +80,9 @@ class InferenceSolver:
         current_length = self.env.compute_tour_length(origin_problem, best_tour)
 
         if self.use_beam and not skip_beam:
-            beam_tour, beam_length = self._run_beam(batch_size, problem_size, reencode_each_step)
+            beam_tour, beam_length = self._run_beam(
+                batch_size, problem_size, reencode_each_step
+            )
             if beam_length.mean() < current_length.mean():
                 best_tour = beam_tour
                 current_length = beam_length
@@ -100,7 +113,9 @@ class InferenceSolver:
         current_step = 0
         while not result.done:
             if current_step == 0:
-                teacher_node = torch.zeros(batch_size, dtype=torch.long, device=self.device)
+                teacher_node = torch.zeros(
+                    batch_size, dtype=torch.long, device=self.device
+                )
                 predicted_node = teacher_node
             else:
                 output = self.model(
@@ -132,7 +147,9 @@ class InferenceSolver:
         current_step = 0
         while not result.done:
             if current_step == 0:
-                selected_node = torch.zeros(batch_size * self.beam_size, dtype=torch.long, device=self.device)
+                selected_node = torch.zeros(
+                    batch_size * self.beam_size, dtype=torch.long, device=self.device
+                )
             else:
                 output = self.model(
                     self.env.constructed_tour,
@@ -142,9 +159,13 @@ class InferenceSolver:
                     beam_size=self.beam_size,
                     reencode_each_step=reencode_each_step,
                 )
-                probs = torch.log(output.transition_probs.view(batch_size, self.beam_size, -1))
+                probs = torch.log(
+                    output.transition_probs.view(batch_size, self.beam_size, -1)
+                )
                 probs[probs.isnan()] = 0
-                self.env.constructed_tour = beam.advance(probs, self.env.constructed_tour)
+                self.env.constructed_tour = beam.advance(
+                    probs, self.env.constructed_tour
+                )
                 selected_node = beam.next_nodes[-1].view(-1)
             result = self.env.step_beam(selected_node, beam=self.beam_size)
             current_step += 1
@@ -175,7 +196,9 @@ class InferenceSolver:
         current_step = 0
         while not result.done:
             if current_step == 0:
-                selected_node = torch.zeros(batch_size * self.beam_size, dtype=torch.long, device=self.device)
+                selected_node = torch.zeros(
+                    batch_size * self.beam_size, dtype=torch.long, device=self.device
+                )
             else:
                 output = self.model(
                     self.env.constructed_tour,
@@ -184,9 +207,13 @@ class InferenceSolver:
                     beam_search=True,
                     beam_size=self.beam_size,
                 )
-                probs = torch.log(output.transition_probs.view(batch_size, self.beam_size, -1))
+                probs = torch.log(
+                    output.transition_probs.view(batch_size, self.beam_size, -1)
+                )
                 probs[probs.isnan()] = 0
-                self.env.constructed_tour = beam.advance(probs, self.env.constructed_tour)
+                self.env.constructed_tour = beam.advance(
+                    probs, self.env.constructed_tour
+                )
                 selected_node = beam.next_nodes[-1].view(-1)
             result = self.env.step_beam(selected_node, beam=self.beam_size)
             current_step += 1

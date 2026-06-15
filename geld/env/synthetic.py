@@ -6,7 +6,11 @@ from logging import getLogger
 import torch
 from tqdm import tqdm
 
-from geld.data.augmentations import apply_rotation, maybe_reverse_tour, sample_training_subpath
+from geld.data.augmentations import (
+    apply_rotation,
+    maybe_reverse_tour,
+    sample_training_subpath,
+)
 from geld.data.loaders import load_lehd_line, load_tsp_instances_with_baselines
 from geld.env.base import TSPEnvironmentBase
 from geld.paths import benchmark_data_dir
@@ -24,7 +28,9 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         self.raw_data_nodes_100 = []
         self.raw_data_tours_100 = []
 
-    def load_problems(self, batch_offset, batch_size, mix_curriculum_sizes=False, train=False):
+    def load_problems(
+        self, batch_offset, batch_size, mix_curriculum_sizes=False, train=False
+    ):
         """Load a training batch with optional curriculum mixing and augmentation."""
         self.batch_offset = batch_offset
         self.batch_size = batch_size
@@ -34,8 +40,12 @@ class SyntheticEnvironment(TSPEnvironmentBase):
             index = random.sample(range(curriculum_size), batch_size)
             problems_small = self.raw_data_nodes_100[index]
             solution_small = self.raw_data_tours_100[index]
-            problems_large = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
-            solution_large = self.raw_data_tours[batch_offset : batch_offset + batch_size]
+            problems_large = self.raw_data_nodes[
+                batch_offset : batch_offset + batch_size
+            ]
+            solution_large = self.raw_data_tours[
+                batch_offset : batch_offset + batch_size
+            ]
             if self.use_subpath_augmentation:
                 problems_large, solution_large = sample_training_subpath(
                     problems_large, solution_large, mode="train", low_index=101
@@ -43,19 +53,31 @@ class SyntheticEnvironment(TSPEnvironmentBase):
             solution_large = maybe_reverse_tour(solution_large)
             self.problem_size = problems_large.shape[1]
             node_gap = self.problem_size - 100
-            batch_indices = torch.arange(batch_size, dtype=torch.long, device=problems_large.device)
-            anchor = problems_small[batch_indices, solution_small[:, 0]].unsqueeze(1).repeat(1, node_gap, 1)
-            problems_small = torch.cat((anchor, problems_small), dim=1)
-            prefix_indices = torch.arange(node_gap, dtype=torch.long, device=problems_large.device)[None, :].repeat(
-                batch_size, 1
+            batch_indices = torch.arange(
+                batch_size, dtype=torch.long, device=problems_large.device
             )
-            solution_small = torch.cat((prefix_indices, solution_small + node_gap), dim=1)
+            anchor = (
+                problems_small[batch_indices, solution_small[:, 0]]
+                .unsqueeze(1)
+                .repeat(1, node_gap, 1)
+            )
+            problems_small = torch.cat((anchor, problems_small), dim=1)
+            prefix_indices = torch.arange(
+                node_gap, dtype=torch.long, device=problems_large.device
+            )[None, :].repeat(batch_size, 1)
+            solution_small = torch.cat(
+                (prefix_indices, solution_small + node_gap), dim=1
+            )
             self.problems = torch.cat((problems_small, problems_large), dim=0)
             self.label_tour = torch.cat((solution_small, solution_large), dim=0)
             self.batch_size = batch_size * 2
         else:
-            self.problems = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
-            self.label_tour = self.raw_data_tours[batch_offset : batch_offset + batch_size]
+            self.problems = self.raw_data_nodes[
+                batch_offset : batch_offset + batch_size
+            ]
+            self.label_tour = self.raw_data_tours[
+                batch_offset : batch_offset + batch_size
+            ]
             if self.use_subpath_augmentation:
                 self.problems, self.label_tour = sample_training_subpath(
                     self.problems, self.label_tour, mode="train"
@@ -104,14 +126,18 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         if load_eval_data:
             if load_synthetic_benchmark:
                 root = benchmark_data_dir()
-                instances, baseline_tours, _ = load_tsp_instances_with_baselines(root, size, distribution)
+                instances, baseline_tours, _ = load_tsp_instances_with_baselines(
+                    root, size, distribution
+                )
                 self.raw_data_nodes = instances
                 self.raw_data_tours = baseline_tours
             else:
                 nodes_list = []
                 tours_list = []
                 with open(self.data_path, "r", encoding="utf-8") as data_file:
-                    lines = data_file.readlines()[begin_index : num_instances + begin_index]
+                    lines = data_file.readlines()[
+                        begin_index : num_instances + begin_index
+                    ]
                 for line in tqdm(lines, ascii=True):
                     nodes, tour = load_lehd_line(line)
                     nodes_list.append(nodes)

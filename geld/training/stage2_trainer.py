@@ -18,7 +18,14 @@ from geld.utils.metrics import AverageMeter, LogData, TimeEstimator
 class CurriculumTrainer:
     """Stage-2 SIL trainer with curriculum scaling and BS/PRC pseudo-labels."""
 
-    def __init__(self, env_params, model_params, optimizer_params, trainer_params, tracker: ExperimentTracker | None = None):
+    def __init__(
+        self,
+        env_params,
+        model_params,
+        optimizer_params,
+        trainer_params,
+        tracker: ExperimentTracker | None = None,
+    ):
         self.env_params = env_params
         self.model_params = model_params
         self.optimizer_params = optimizer_params
@@ -28,19 +35,21 @@ class CurriculumTrainer:
         self.result_folder = get_result_folder()
         self.result_log = LogData()
         self.tracker = tracker
-        self.device = setup_device(trainer_params["use_cuda"], trainer_params["cuda_device_num"])
+        self.device = setup_device(
+            trainer_params["use_cuda"], trainer_params["cuda_device_num"]
+        )
 
         torch.manual_seed(2024)
         self.model = GeldModel(**self.model_params).to(self.device)
         self.env = SyntheticEnvironment(**self.env_params)
         self.env.set_device(self.device)
 
-        checkpoint_path = (
-            f"{trainer_params['model_load_path']}/checkpoint-{trainer_params['model_load_epoch']}.pt"
-        )
+        checkpoint_path = f"{trainer_params['model_load_path']}/checkpoint-{trainer_params['model_load_epoch']}.pt"
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params["optimizer"])
+        self.optimizer = Optimizer(
+            self.model.parameters(), **self.optimizer_params["optimizer"]
+        )
 
         self.start_epoch = 1
         model_load = trainer_params["model_load"]
@@ -66,17 +75,24 @@ class CurriculumTrainer:
     def run(self):
         """Run curriculum SIL from TSP-k_m toward n_max."""
         self.time_estimator.reset(self.start_epoch)
-        curriculum_episodes = self.trainer_params.get("curriculum_data_episodes", 1_000_000)
+        curriculum_episodes = self.trainer_params.get(
+            "curriculum_data_episodes", 1_000_000
+        )
         self.env.load_raw_data(curriculum_episodes, load_eval_data=False)
         self.env.set_device(self.device)
         problem_size_init = self.trainer_params["problem_size_init"]
         problem_size_max = self.trainer_params["problem_size_max"]
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
-            self.logger.info("=================================================================")
-            problem_size = problem_size_init + epoch * (problem_size_max - problem_size_init) // self.trainer_params[
-                "epochs"
-            ]
+            self.logger.info(
+                "================================================================="
+            )
+            problem_size = (
+                problem_size_init
+                + epoch
+                * (problem_size_max - problem_size_init)
+                // self.trainer_params["epochs"]
+            )
             (
                 train_reference_length,
                 train_predicted_length,
@@ -85,8 +101,12 @@ class CurriculumTrainer:
                 best_mean_length,
             ) = self._train_one_epoch(epoch, problem_size)
             self.result_log.append("problem_size", epoch, problem_size)
-            self.result_log.append("train_reference_length", epoch, train_reference_length)
-            self.result_log.append("train_predicted_length", epoch, train_predicted_length)
+            self.result_log.append(
+                "train_reference_length", epoch, train_reference_length
+            )
+            self.result_log.append(
+                "train_predicted_length", epoch, train_predicted_length
+            )
             self.result_log.append("train_loss", epoch, train_loss)
             self.result_log.append("greedy_mean_length", epoch, greedy_mean_length)
             self.result_log.append("best_mean_length", epoch, best_mean_length)
@@ -116,11 +136,17 @@ class CurriculumTrainer:
                 self.tracker.save_training_progress(
                     self.result_log,
                     logging_config=self.trainer_params.get("logging"),
-                    metadata={"run_type": "train_stage2", "trainer_params": self.trainer_params},
+                    metadata={
+                        "run_type": "train_stage2",
+                        "trainer_params": self.trainer_params,
+                    },
                     save_plots=epoch > 1,
                 )
 
-            if epoch == self.trainer_params["epochs"] or (epoch % self.trainer_params["logging"]["model_save_interval"]) == 0:
+            if (
+                epoch == self.trainer_params["epochs"]
+                or (epoch % self.trainer_params["logging"]["model_save_interval"]) == 0
+            ):
                 self.logger.info("Saving trained_model")
                 torch.save(
                     {
@@ -139,7 +165,10 @@ class CurriculumTrainer:
                     self.tracker.save_training_progress(
                         self.result_log,
                         logging_config=self.trainer_params.get("logging"),
-                        metadata={"run_type": "train_stage2", "trainer_params": self.trainer_params},
+                        metadata={
+                            "run_type": "train_stage2",
+                            "trainer_params": self.trainer_params,
+                        },
                     )
                     self.tracker.finish()
 
@@ -150,9 +179,13 @@ class CurriculumTrainer:
         loss_meter = AverageMeter()
         train_num_episode = self.trainer_params["train_episodes"]
         episode = 0
-        batch_log_interval = self.trainer_params["logging"].get("batch_log_interval", 50)
+        batch_log_interval = self.trainer_params["logging"].get(
+            "batch_log_interval", 50
+        )
 
-        self.env.generate_random_instances(self.trainer_params["train_episodes"], problem_size)
+        self.env.generate_random_instances(
+            self.trainer_params["train_episodes"], problem_size
+        )
         greedy_lengths, greedy_tours = self._validation_greedy()
         beam_lengths, beam_tours = self._validation_beam(problem_size)
         use_greedy = greedy_lengths < beam_lengths
@@ -189,8 +222,10 @@ class CurriculumTrainer:
                 while episode < train_num_episode:
                     remaining = train_num_episode - episode
                     batch_size = min(self.trainer_params["train_batch_size"], remaining)
-                    reference_length, predicted_length, avg_loss = self._train_one_batch(
-                        episode, batch_size, mix_curriculum_sizes=True
+                    reference_length, predicted_length, avg_loss = (
+                        self._train_one_batch(
+                            episode, batch_size, mix_curriculum_sizes=True
+                        )
                     )
                     if self.device.type == "cuda":
                         torch.cuda.empty_cache()
@@ -255,9 +290,9 @@ class CurriculumTrainer:
                 self.env.load_problems_val(episode, batch_size, rotation_id)
                 origin_problem = self.env.problems
                 batch_tours_slice = current_tours[episode : episode + batch_size]
-                segment_indices = torch.arange(0, problem_size, step=problem_size // num_segments, dtype=torch.long)[
-                    :num_segments
-                ]
+                segment_indices = torch.arange(
+                    0, problem_size, step=problem_size // num_segments, dtype=torch.long
+                )[:num_segments]
                 repaired = apply_prc_iteration(
                     self.model,
                     self.env,
@@ -267,10 +302,16 @@ class CurriculumTrainer:
                     num_segments,
                     max_subpath,
                 )
-                batch_tours = torch.cat((batch_tours, repaired), dim=0) if batch_tours is not None else repaired
+                batch_tours = (
+                    torch.cat((batch_tours, repaired), dim=0)
+                    if batch_tours is not None
+                    else repaired
+                )
                 current_length = self.env.compute_tour_length(origin_problem, repaired)
                 tour_lengths = (
-                    torch.cat((tour_lengths, current_length), dim=0) if tour_lengths is not None else current_length
+                    torch.cat((tour_lengths, current_length), dim=0)
+                    if tour_lengths is not None
+                    else current_length
                 )
                 episode += batch_size
             current_tours = batch_tours
@@ -287,9 +328,19 @@ class CurriculumTrainer:
         while episode < val_num_episode:
             remaining = val_num_episode - episode
             batch_size = min(self.trainer_params["val_beam_batch_size"], remaining)
-            lengths, batch_tours = self.solver.run_beam_on_coordinates(episode, batch_size, problem_size)
-            tour_lengths = torch.cat((tour_lengths, lengths), dim=0) if tour_lengths is not None else lengths
-            tours = torch.cat((tours, batch_tours), dim=0) if tours is not None else batch_tours
+            lengths, batch_tours = self.solver.run_beam_on_coordinates(
+                episode, batch_size, problem_size
+            )
+            tour_lengths = (
+                torch.cat((tour_lengths, lengths), dim=0)
+                if tour_lengths is not None
+                else lengths
+            )
+            tours = (
+                torch.cat((tours, batch_tours), dim=0)
+                if tours is not None
+                else batch_tours
+            )
             episode += batch_size
         return tour_lengths, tours
 
@@ -304,16 +355,31 @@ class CurriculumTrainer:
         while episode < val_num_episode:
             remaining = val_num_episode - episode
             batch_size = min(self.trainer_params["val_batch_size"], remaining)
-            lengths, batch_tours = self.solver.run_greedy_on_coordinates(episode, batch_size)
-            tour_lengths = torch.cat((tour_lengths, lengths), dim=0) if tour_lengths is not None else lengths
-            tours = torch.cat((tours, batch_tours), dim=0) if tours is not None else batch_tours
+            lengths, batch_tours = self.solver.run_greedy_on_coordinates(
+                episode, batch_size
+            )
+            tour_lengths = (
+                torch.cat((tour_lengths, lengths), dim=0)
+                if tour_lengths is not None
+                else lengths
+            )
+            tours = (
+                torch.cat((tours, batch_tours), dim=0)
+                if tours is not None
+                else batch_tours
+            )
             episode += batch_size
         return tour_lengths, tours
 
     def _train_one_batch(self, batch_offset, batch_size, mix_curriculum_sizes=False):
         """SL batch with optional TSP-k_m curriculum mixing."""
         self.model.train()
-        self.env.load_problems(batch_offset, batch_size, mix_curriculum_sizes=mix_curriculum_sizes, train=True)
+        self.env.load_problems(
+            batch_offset,
+            batch_size,
+            mix_curriculum_sizes=mix_curriculum_sizes,
+            train=True,
+        )
         problem_size = self.env.problems.size(1)
         if mix_curriculum_sizes:
             batch_size = self.env.batch_size
@@ -352,7 +418,15 @@ class CurriculumTrainer:
             result = self.env.step(teacher_node, predicted_node)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
 
-        reference_length = self.env.compute_tour_length(self.env.problems, self.env.constructed_tour).mean().item()
-        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.model_tour).mean().item()
+        reference_length = (
+            self.env.compute_tour_length(self.env.problems, self.env.constructed_tour)
+            .mean()
+            .item()
+        )
+        predicted_length = (
+            self.env.compute_tour_length(self.env.problems, self.env.model_tour)
+            .mean()
+            .item()
+        )
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()

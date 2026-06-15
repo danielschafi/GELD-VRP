@@ -1,6 +1,6 @@
 """Default hyperparameters matching the original GELD scripts."""
 
-from geld.paths import project_root, sl_training_data_dir
+from geld.paths import project_root, training_stage_1_data_dir
 
 
 def default_model_params(mode: str = "train") -> dict:
@@ -15,9 +15,11 @@ def default_model_params(mode: str = "train") -> dict:
     }
 
 
-def default_env_params(mode: str = "train", use_subpath_augmentation: bool = True) -> dict:
+def default_env_params(
+    mode: str = "train", use_subpath_augmentation: bool = True
+) -> dict:
     """Default environment settings with LEHD TSP-100 training path."""
-    training_path = sl_training_data_dir() / "train_TSP100_n100w-001.txt"
+    training_path = training_stage_1_data_dir() / "train_TSP100_n100w-001.txt"
     return {
         "data_path": str(training_path),
         "mode": mode,
@@ -26,7 +28,7 @@ def default_env_params(mode: str = "train", use_subpath_augmentation: bool = Tru
     }
 
 
-def default_optimizer_params() -> dict:
+def default_training_stage_1_optimizer_params() -> dict:
     """Stage-1 Adam optimizer and MultiStepLR scheduler (lr=1e-4)."""
     return {
         "optimizer": {"lr": 1e-4},
@@ -37,12 +39,14 @@ def default_optimizer_params() -> dict:
     }
 
 
-def default_stage2_optimizer_params() -> dict:
+def default_training_stage_2_optimizer_params() -> dict:
     """Stage-2 SIL optimizer (lr=1e-5)."""
     return {"optimizer": {"lr": 1e-5}}
 
 
-def default_trainer_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
+def default_training_stage_1_params(
+    use_cuda: bool = True, cuda_device_num: int = 0
+) -> dict:
     """Stage-1 SL training defaults (n_e1=50 epochs, batch 1024)."""
     return {
         "use_cuda": use_cuda,
@@ -71,7 +75,7 @@ def default_trainer_params(use_cuda: bool = True, cuda_device_num: int = 0) -> d
     }
 
 
-def default_stage2_trainer_params(
+def default_training_stage_2_params(
     use_cuda: bool = True,
     cuda_device_num: int = 0,
     model_load_path: str | None = None,
@@ -80,7 +84,7 @@ def default_stage2_trainer_params(
     """Stage-2 SIL curriculum defaults (k_m=100, n_max=1000, BS width 16)."""
     if model_load_path is None:
         model_load_path = str(project_root() / "result" / "Here")
-    params = default_trainer_params(use_cuda, cuda_device_num)
+    params = default_training_stage_1_params(use_cuda, cuda_device_num)
     params.update(
         {
             "train_episodes": 512,

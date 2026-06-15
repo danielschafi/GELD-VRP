@@ -39,10 +39,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--wandb", action="store_true", help="Log metrics to Weights & Biases")
+    parser.add_argument(
+        "--wandb", action="store_true", help="Log metrics to Weights & Biases"
+    )
     parser.add_argument("--wandb-project", type=str, default="geld")
     parser.add_argument("--wandb-run-name", type=str, default=None)
-    parser.add_argument("--batch-log-interval", type=int, default=None, help="Log every N batches (default: 50)")
+    parser.add_argument(
+        "--batch-log-interval",
+        type=int,
+        default=None,
+        help="Log every N batches (default: 50)",
+    )
     return parser
 
 
@@ -95,7 +102,9 @@ def main():
             "trainer_params": trainer_params,
         },
     )
-    trainer = CurriculumTrainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)
+    trainer = CurriculumTrainer(
+        env_params, model_params, optimizer_params, trainer_params, tracker=tracker
+    )
     trainer.run()
 
 

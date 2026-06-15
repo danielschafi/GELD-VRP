@@ -6,7 +6,9 @@ import torch
 LARGE_INSTANCE_THRESHOLD = 10_000
 
 
-def compute_distance_matrix(coordinates: torch.Tensor, block_size: int = 5000) -> torch.Tensor:
+def compute_distance_matrix(
+    coordinates: torch.Tensor, block_size: int = 5000
+) -> torch.Tensor:
     """Blocked pairwise L2 distance matrix for large-scale TSP instances."""
     _, num_nodes, _ = coordinates.size()
     device = coordinates.device
@@ -21,7 +23,9 @@ def compute_distance_matrix(coordinates: torch.Tensor, block_size: int = 5000) -
             block_j = coordinates[:, j:end_j]
             block_distances = torch.cdist(block_i, block_j, p=2)
             block_distances.diagonal(dim1=-2, dim2=-1).zero_()
-            distance_matrix[:, i:end_i, j:end_j] = block_distances.to(dtype=torch.float16)
+            distance_matrix[:, i:end_i, j:end_j] = block_distances.to(
+                dtype=torch.float16
+            )
     return distance_matrix
 
 
@@ -32,7 +36,9 @@ def build_distance_matrix(normalized_coordinates: torch.Tensor) -> torch.Tensor:
     return distance_matrix
 
 
-def map_coordinates_to_regions(coordinates: torch.Tensor, grid_size: int = 3) -> torch.Tensor:
+def map_coordinates_to_regions(
+    coordinates: torch.Tensor, grid_size: int = 3
+) -> torch.Tensor:
     """Assign each node to a region for RALA (m = grid_size²)."""
     region_indices = torch.floor(coordinates * grid_size).long()
     region_indices = torch.clamp(region_indices, min=0, max=grid_size - 1)

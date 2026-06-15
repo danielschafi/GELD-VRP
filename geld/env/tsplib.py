@@ -16,13 +16,25 @@ logger = getLogger(__name__)
 class TSPLIBEnvironment(TSPEnvironmentBase):
     """Environment for TSPLIB and National TSP benchmark evaluation."""
 
-    def load_problems(self, batch_offset, batch_size, name=None, opt_len=None, use_tsplib_dir=False, **_kwargs):
+    def load_problems(
+        self,
+        batch_offset,
+        batch_size,
+        name=None,
+        opt_len=None,
+        use_tsplib_dir=False,
+        **_kwargs,
+    ):
         """Load LEHD batch or a single real-world TSP instance."""
         self.batch_offset = batch_offset
         self.batch_size = batch_size
         if not self.eval_tsplib:
-            self.problems = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
-            self.label_tour = self.raw_data_tours[batch_offset : batch_offset + batch_size]
+            self.problems = self.raw_data_nodes[
+                batch_offset : batch_offset + batch_size
+            ]
+            self.label_tour = self.raw_data_tours[
+                batch_offset : batch_offset + batch_size
+            ]
             if self.use_subpath_augmentation:
                 self.problems, self.label_tour = sample_training_subpath(
                     self.problems, self.label_tour, mode="train"
@@ -32,7 +44,9 @@ class TSPLIBEnvironment(TSPEnvironmentBase):
             self.tsplib_name = name
             self.tsplib_cost = opt_len
             instance, _ = load_tsplib_file(
-                root=benchmark_data_dir(), tsplib_name=name, use_tsplib_dir=use_tsplib_dir
+                root=benchmark_data_dir(),
+                tsplib_name=name,
+                use_tsplib_dir=use_tsplib_dir,
             )
             self.problems = instance.reshape(1, -1, 2)
             self.label_tour = None
