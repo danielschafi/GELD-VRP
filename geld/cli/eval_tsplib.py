@@ -10,7 +10,7 @@ import torch
 from geld.config.defaults import default_env_params, default_eval_params, default_model_params
 from geld.inference.evaluator import EvalMode, InferenceEvaluator
 from geld.utils.experiment_tracker import ExperimentTracker
-from geld.utils.logging import copy_all_src, create_logger, get_result_folder
+from geld.utils.logging import create_logger, get_result_folder
 
 
 def seed_everything(seed=2024):
@@ -62,7 +62,6 @@ def main():
         wandb_config={"eval_params": eval_params, "mode": mode.value},
     )
     evaluator = InferenceEvaluator(env_params, model_params, eval_params, mode=mode, tracker=tracker)
-    copy_all_src(evaluator.result_folder)
 
     if args.tsplib and not args.postprocess:
         summary = evaluator.run_tsplib(use_tsplib_dir=True)

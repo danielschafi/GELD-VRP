@@ -11,7 +11,7 @@ from geld.config.defaults import (
 )
 from geld.training.sl_trainer import SupervisedTrainer
 from geld.utils.experiment_tracker import ExperimentTracker
-from geld.utils.logging import copy_all_src, create_logger, get_result_folder
+from geld.utils.logging import create_logger, get_result_folder
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -68,7 +68,6 @@ def main():
         },
     )
     trainer = SupervisedTrainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)
-    copy_all_src(trainer.result_folder)
     trainer.run()
 
 

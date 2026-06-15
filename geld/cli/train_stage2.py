@@ -15,7 +15,7 @@ from geld.config.defaults import (
 )
 from geld.training.stage2_trainer import CurriculumTrainer
 from geld.utils.experiment_tracker import ExperimentTracker
-from geld.utils.logging import copy_all_src, create_logger, get_result_folder
+from geld.utils.logging import create_logger, get_result_folder
 
 
 def seed_everything(seed=2024):
@@ -96,7 +96,6 @@ def main():
         },
     )
     trainer = CurriculumTrainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)
-    copy_all_src(trainer.result_folder)
     trainer.run()
 
 

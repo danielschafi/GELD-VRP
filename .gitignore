@@ -1,5 +1,9 @@
 playground/
 resources/
+.cursor/
+data/
+archive/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

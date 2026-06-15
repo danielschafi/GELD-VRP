@@ -10,7 +10,7 @@ import torch
 from geld.config.defaults import default_env_params, default_eval_params, default_model_params
 from geld.inference.evaluator import EvalMode, InferenceEvaluator
 from geld.utils.experiment_tracker import ExperimentTracker
-from geld.utils.logging import copy_all_src, create_logger, get_result_folder
+from geld.utils.logging import create_logger, get_result_folder
 
 
 def seed_everything(seed=2024):
@@ -64,7 +64,6 @@ def main():
         wandb_run_name=args.wandb_run_name,
         wandb_config={"eval_params": eval_params},
     )
-    copy_all_src(result_folder)
 
     for distribution in distributions:
         for size in sizes:

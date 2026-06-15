@@ -119,22 +119,3 @@ def _build_log_image_plt(img_params, result_log: LogData, labels=None):
     plt.grid(config["grid"])
 
 
-def copy_all_src(dst_root: Path | str):
-    """Snapshot imported Python sources into the result folder."""
-    dst_path = Path(dst_root) / "src"
-    dst_path.mkdir(parents=True, exist_ok=True)
-    home_dir = str(project_root())
-    for _, module in sys.modules.items():
-        if hasattr(module, "__file__") and module.__file__:
-            src_abspath = os.path.abspath(module.__file__)
-            if os.path.commonprefix([home_dir, src_abspath]) == home_dir and src_abspath.endswith(".py"):
-                if not os.path.isfile(src_abspath):
-                    continue
-                dst_filepath = dst_path / os.path.basename(src_abspath)
-                if dst_filepath.exists():
-                    stem, suffix = dst_filepath.stem, dst_filepath.suffix
-                    post_index = 0
-                    while (dst_path / f"{stem}({post_index}){suffix}").exists():
-                        post_index += 1
-                    dst_filepath = dst_path / f"{stem}({post_index}){suffix}"
-                shutil.copy(src_abspath, dst_filepath)
