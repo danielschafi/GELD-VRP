@@ -10,6 +10,7 @@ dependencies = [
     "matplotlib>=3.8.3",
     "tqdm>=4.66.2",
     "pytz>=2024.1",
+    "pandas>=2.3.3",
 ]
 
 [project.optional-dependencies]

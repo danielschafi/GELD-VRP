@@ -1,5 +1,6 @@
 """Environment for synthetic and LEHD training data."""
 
+import pickle
 import random
 from logging import getLogger
 
@@ -11,10 +12,9 @@ from geld.data.augmentations import (
     maybe_reverse_tour,
     sample_training_subpath,
 )
-from geld.data.loaders import load_lehd_line, load_tsp_instances_with_baselines
+from geld.data.loaders import load_lehd_line, load_tsp_instances_with_baselines, load_cvrptw_data_with_labels
 from geld.env.base import TSPEnvironmentBase
-from geld.paths import benchmark_data_dir
-
+from geld.paths import benchmark_data_dir, training_stage_1_data_dir
 logger = getLogger(__name__)
 
 
@@ -25,6 +25,11 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         super().__init__(**env_params)
         self.raw_data_nodes = []
         self.raw_data_tours = []
+        self.raw_data_demand = []
+        self.raw_data_tw_start = []
+        self.raw_data_tw_end = []
+        self.raw_data_service_time = []
+        self.raw_data_costs = []
         self.raw_data_nodes_100 = []
         self.raw_data_tours_100 = []
 
@@ -123,37 +128,47 @@ class SyntheticEnvironment(TSPEnvironmentBase):
     ):
         """Load LEHD training data, curriculum subset, or synthetic benchmarks."""
         logger.info("Loading raw dataset...")
-        if load_eval_data:
-            if load_synthetic_benchmark:
-                root = benchmark_data_dir()
-                instances, baseline_tours, _ = load_tsp_instances_with_baselines(
-                    root, size, distribution
-                )
-                self.raw_data_nodes = instances
-                self.raw_data_tours = baseline_tours
-            else:
-                nodes_list = []
-                tours_list = []
-                with open(self.data_path, "r", encoding="utf-8") as data_file:
-                    lines = data_file.readlines()[
-                        begin_index : num_instances + begin_index
-                    ]
-                for line in tqdm(lines, ascii=True):
-                    nodes, tour = load_lehd_line(line)
-                    nodes_list.append(nodes)
-                    tours_list.append(tour)
-                self.raw_data_nodes = torch.tensor(nodes_list, requires_grad=False)
-                self.raw_data_tours = torch.tensor(tours_list, requires_grad=False)
-            logger.info("Raw dataset loaded.")
-        else:
-            nodes_list = []
-            tours_list = []
-            with open(self.data_path, "r", encoding="utf-8") as data_file:
-                lines = data_file.readlines()[begin_index : num_instances + begin_index]
-            for line in tqdm(lines, ascii=True):
-                nodes, tour = load_lehd_line(line)
-                nodes_list.append(nodes)
-                tours_list.append(tour)
-            self.raw_data_nodes_100 = torch.tensor(nodes_list, requires_grad=False)
-            self.raw_data_tours_100 = torch.tensor(tours_list, requires_grad=False)
-            logger.info("Raw 100-node curriculum dataset loaded.")
+
+        dataset = load_cvrptw_data_with_labels()
+        self.raw_data_nodes = dataset["coords"].requires_grad_(False)
+        self.raw_data_tours = dataset["label_tours"].requires_grad_(False)
+        self.raw_data_demand = dataset["demand"].requires_grad_(False)
+        self.raw_data_tw_start = dataset["tw_start"].requires_grad_(False)
+        self.raw_data_tw_end = dataset["tw_end"].requires_grad_(False)
+        self.raw_data_service_time = dataset["service_time"].requires_grad_(False)
+        self.raw_data_costs = dataset["costs"].requires_grad_(False)
+
+        # if load_eval_data:
+        #     if load_synthetic_benchmark:
+        #         root = benchmark_data_dir()
+        #         instances, baseline_tours, _ = load_tsp_instances_with_baselines(
+        #             root, size, distribution
+        #         )
+        #         self.raw_data_nodes = instances
+        #         self.raw_data_tours = baseline_tours
+        #     else:
+        #         nodes_list = []
+        #         tours_list = []
+        #         with open(self.data_path, "r", encoding="utf-8") as data_file:
+        #             lines = data_file.readlines()[
+        #                 begin_index : num_instances + begin_index
+        #             ]
+        #         for line in tqdm(lines, ascii=True):
+        #             nodes, tour = load_lehd_line(line)
+        #             nodes_list.append(nodes)
+        #             tours_list.append(tour)
+        #         self.raw_data_nodes = torch.tensor(nodes_list, requires_grad=False)
+        #         self.raw_data_tours = torch.tensor(tours_list, requires_grad=False)
+        #     logger.info("Raw dataset loaded.")
+        # else:
+        #     nodes_list = []
+        #     tours_list = []
+        #     with open(self.data_path, "r", encoding="utf-8") as data_file:
+        #         lines = data_file.readlines()[begin_index : num_instances + begin_index]
+        #     for line in tqdm(lines, ascii=True):
+        #         nodes, tour = load_lehd_line(line)
+        #         nodes_list.append(nodes)
+        #         tours_list.append(tour)
+        #     self.raw_data_nodes_100 = torch.tensor(nodes_list, requires_grad=False)
+        #     self.raw_data_tours_100 = torch.tensor(tours_list, requires_grad=False)
+        #     logger.info("Raw 100-node curriculum dataset loaded.")

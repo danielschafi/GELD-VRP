@@ -3,6 +3,117 @@
 from pathlib import Path
 
 import torch
+from geld.paths import training_stage_1_data_dir
+import pandas as pd
+import numpy as np
+import pickle
+
+
+# MVMoE / RCT synthetic CVRPTW defaults (not stored in pickle files).
+DEPOT_TW_START = 0.0
+DEPOT_TW_END = 3.0
+TOUR_PAD_VALUE = -1
+
+class CvrptwDataset(TypedDict):
+    coords: torch.Tensor
+    demand: torch.Tensor
+    tw_start: torch.Tensor
+    tw_end: torch.Tensor
+    service_time: torch.Tensor
+    label_tours: torch.Tensor
+    costs: torch.Tensor
+
+
+def problem_files() -> list[Path]:
+    """Get all problem data files. (Not HGS solutions)"""
+    return sorted(
+        path for path in training_stage_1_data_dir.glob("*.pkl") if not path.stem.startswith("hgs_")
+    )
+
+
+def load_cvrptw_data_with_labels() -> tuple[torch.Tensor, torch.Tensor]:
+    """Load all CVRPTW data with labels into memory."""
+
+    data_dir = training_stage_1_data_dir()
+
+    coords_list: list[torch.Tensor] = []
+    demand_list: list[torch.Tensor] = []
+    tw_start_list: list[torch.Tensor] = []
+    tw_end_list: list[torch.Tensor] = []
+    service_time_list: list[torch.Tensor] = []
+    tour_list: list[torch.Tensor] = []
+    costs: list[float] = []
+
+    # Go over problem data files
+    for problem_file in problem_files():
+        solution_file = "hgs_" + problem_file.stem + ".pkl"
+
+        if not problem_file.exists():
+            raise FileNotFoundError(f"Problem file {problem_file} not found")
+        if not solution_file.exists():
+            raise FileNotFoundError(f"Solution file {solution_file} not found")
+
+
+        with open(problem_file, "rb") as f:
+            problem_records = pickle.load(f)
+        with open(solution_file, "rb") as f:
+            solution_records = pickle.load(f)
+
+        if len(problem_records) != len(solution_records):
+            raise ValueError(f"Problem and solution data have different lengths for file {problem_file}")
+
+        # Extract records
+        for record, (cost, raw_tour) in zip(problem_records, solution_records):
+            coords, demand, tw_start, tw_end, service_time = prepare_cvrptw_instance(record)
+            
+            action_tour = format_hgs_tour(raw_tour)
+
+            coords_list.append(torch.tensor(coords, dtype=torch.float64))
+            demand_list.append(torch.tensor(demand, dtype=torch.float64))
+            tw_start_list.append(torch.tensor(tw_start, dtype=torch.float64))
+            tw_end_list.append(torch.tensor(tw_end, dtype=torch.float64))
+            service_time_list.append(torch.tensor(service_time, dtype=torch.float64))
+            tour_list.append(torch.tensor(action_tour, dtype=torch.long))
+            costs.append(float(cost))
+
+
+    return CvrptwDataset(
+        coords=torch.stack(coords_list),
+        demand=torch.stack(demand_list),
+        tw_start=torch.stack(tw_start_list),
+        tw_end=torch.stack(tw_end_list),
+        service_time=torch.stack(service_time_list),
+        label_tours=torch.nn.utils.rnn.pad_sequence(
+            tour_list, batch_first=True, padding_value=TOUR_PAD_VALUE
+        ),
+        costs=torch.tensor(costs, dtype=torch.float64),
+    )
+
+
+def prepare_cvrptw_instance(record: dict) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Prepare one CVRPTW instance from a record. Setting datatypes, and preprending depot at index 0"""
+    depot_xy, node_xy, demand, capacity, service_time, tw_start, tw_end = record
+    capacity = float(capacity)
+
+    depot_xy = np.asarray(depot_xy, dtype=np.float64).reshape(1, 2) # need to reshape to (1, 2) for vstack, insert depot at index 0
+    node_xy = np.asarray(node_xy, dtype=np.float64)
+    demand_norm = np.asarray(demand, dtype=np.float64) / capacity
+    service = np.asarray(service_time, dtype=np.float64)
+    tw_start_arr = np.asarray(tw_start, dtype=np.float64)
+    tw_end_arr = np.asarray(tw_end, dtype=np.float64)
+    
+    coords = np.vstack((depot_xy, node_xy))
+    demand_full = np.concatenate(([0.0], demand_norm))
+    service_full = np.concatenate(([0.0], service))
+    tw_start_full = np.concatenate(([DEPOT_TW_START], tw_start_arr))
+    tw_end_full = np.concatenate(([DEPOT_TW_END], tw_end_arr))
+    return coords, demand_full, tw_start_full, tw_end_full, service_full
+
+def format_hgs_tour(raw_tour: list[int]) -> np.ndarray:
+    """Convert HGS zero-separated tour to depot-inclusive tour."""
+    tour = np.asarray(raw_tour, dtype=np.int64)
+    return np.concatenate(([0], tour))
+
 
 
 def read_solutions_from_file(file_path):
