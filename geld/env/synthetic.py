@@ -130,13 +130,14 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         logger.info("Loading raw dataset...")
 
         dataset = load_cvrptw_data_with_labels()
-        self.raw_data_nodes = dataset["coords"].requires_grad_(False)
-        self.raw_data_tours = dataset["label_tours"].requires_grad_(False)
-        self.raw_data_demand = dataset["demand"].requires_grad_(False)
-        self.raw_data_tw_start = dataset["tw_start"].requires_grad_(False)
-        self.raw_data_tw_end = dataset["tw_end"].requires_grad_(False)
-        self.raw_data_service_time = dataset["service_time"].requires_grad_(False)
-        self.raw_data_costs = dataset["costs"].requires_grad_(False)
+        
+        self.raw_data_nodes = dataset.coords.requires_grad_(False)
+        self.raw_data_demand = dataset.demand.requires_grad_(False)
+        self.raw_data_tw_start = dataset.tw_start.requires_grad_(False)
+        self.raw_data_tw_end = dataset.tw_end.requires_grad_(False)
+        self.raw_data_service_time = dataset.service_time.requires_grad_(False)
+        self.raw_data_tours = dataset.label_tours.requires_grad_(False)
+        self.raw_data_costs = dataset.costs.requires_grad_(False)
 
         # if load_eval_data:
         #     if load_synthetic_benchmark:

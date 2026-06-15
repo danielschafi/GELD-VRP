@@ -31,7 +31,7 @@ def problem_files() -> list[Path]:
     )
 
 
-def load_cvrptw_data_with_labels() -> tuple[torch.Tensor, torch.Tensor]:
+def load_cvrptw_data_with_labels() -> CvrptwDataset:
     """Load all CVRPTW data with labels into memory."""
 
     data_dir = training_stage_1_data_dir()
