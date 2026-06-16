@@ -81,6 +81,8 @@ class TrainingStage1Trainer:
             train_reference_length, train_predicted_length, train_loss = (
                 self._train_one_epoch(epoch)
             )
+            self.scheduler.step()
+
             self.result_log.append(
                 "train_reference_length", epoch, train_reference_length
             )
@@ -88,7 +90,6 @@ class TrainingStage1Trainer:
                 "train_predicted_length", epoch, train_predicted_length
             )
             self.result_log.append("train_loss", epoch, train_loss)
-            self.scheduler.step()
 
             elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(
                 epoch, self.trainer_params["epochs"]

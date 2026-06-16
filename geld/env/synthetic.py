@@ -126,7 +126,10 @@ class SyntheticEnvironment(TSPEnvironmentBase):
         size=None,
         distribution=None,
     ):
-        """Load LEHD training data, curriculum subset, or synthetic benchmarks."""
+        """
+        Currently only loads the train dataset for stage 1 supervised learning training
+        """
+
         logger.info("Loading raw dataset...")
 
         dataset = load_cvrptw_data_with_labels()
