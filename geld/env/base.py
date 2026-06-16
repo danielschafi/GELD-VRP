@@ -67,7 +67,19 @@ class TSPEnvironmentBase:
         return self
 
     def reset(self, batch_size=None) -> StepResult:
-        """Start a new tour-construction episode and return the initial coordinates."""
+        """
+        Start a new tour-construction episode and return the initial coordinates.
+
+        containers for
+        
+        - self.constructed_tour: decoder input  / ground truth path (t-1 steps of it) / autoregressively built tour
+        - self.model_tour: tour of model argmax predictions at each step
+        - self.nodes_selected: nr of constuction steps completed
+        - label_tour: complete ground truth reference tour
+        
+        Returns:
+        - StepResult with self.problems=coordinates and done=false
+        """
         if batch_size is not None:
             self.batch_size = batch_size
         self.constructed_tour = torch.zeros(

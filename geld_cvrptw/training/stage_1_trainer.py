@@ -69,24 +69,6 @@ class Stage1Trainer:
         self.time_estimator = TimeEstimator()
 
 
-    def continue_training_from_checkpoint(self):
-        """
-        continues training from a checkpoint according to config. 
-        Loads params and model, optim etc. state
-        """
-        model_load = self.trainer_params["model_load"]
-        checkpoint_path = (
-            f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
-        )
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.start_epoch = 1 + model_load["epoch"]
-        self.result_log.set_raw_data(checkpoint["result_log"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self.scheduler.last_epoch = model_load["epoch"] - 1
-        self.logger.info("Saved Model Loaded !!")
-
-
     def run_training(self):
         """Run stage 1 supervised training"""
 
@@ -148,12 +130,83 @@ class Stage1Trainer:
         avg_reference_length = reference_length_meter.avg
         avg_predicted_length = predicted_length_meter.avg 
         avg_loss = loss_meter.avg
+
         return avg_reference_length, avg_predicted_length, avg_loss
 
         
-    def _train_one_batch(self, batch_offset, batch_size):
-        """Train one batch supervised learning: cross entropy with teacher/grount_truth."""
-        pass
+    def _train_one_batch(self, batch_offset:int, batch_size:int):
+        """
+        Train one batch supervised learning: cross entropy with teacher/grount_truth.
+        Each sample is used for problem_size steps. 
+        At each step of the teacher tour we ask the model, 
+        where it would go next and then compute cross entropy for the outputted probability distribution.
+        """
+        self.model.train()
+
+        # Load one batch of samples
+        self.env.load_problems(batch_offset, batch_size, train=True)
+
+        # step 1 is fixed, for tracking the models preds
+        # We just track them for each step that we let it predict
+        # we DONT use it to compute the joint probability of that tour under the model, only per step predictions.
+        step_log_probs = torch.ones(size=(batch_size, 0), device=self.device)
+
+        # Reset env state (pred tour)
+        result = self.env.reset()
+
+        # prepare data. Normalize, map nodes to RALA regions
+        self.model.prepare_instance(result.coordinates)
+
+        current_step = 0
+        while not result.done:
+            # Decoder needs depot and current node (+knfeasible) to make prediction. Thats why first two steps fixed.
+            # Also kind of works for cvrptw since in our data its a continuous tour 
+            if current_step == 0:
+                # append last in cyclic (this is a node before return to depot)
+                teacher_node = self.env.label_tour[:, -1] # cyclic. last of tour
+                predicted_node = self.env.label_tour[: -1]
+                step_prob = torch.ones(batch_size, 1, device=self.device)
+            elif current_step == 1:
+                # append depot
+                teacher_node = self.env.label_tour[:, 0] # cyclic. last of tour
+                predicted_node = self.env.label_tour[: 0]
+                step_prob = torch.ones(batch_size, 1, device=self.device)
+            else:
+                # given t-1 labels from ground truths predict the t-th
+                output = self.model(self.env.constructed_tour, self.env.label_tour, current_step)
+
+                teacher_node = output.teacher_action # what the ground truth was
+                predicted_node = output.predicted_action # what the models argmax pred is
+                step_prob = output.step_prob 
+                loss_mean = -step_prob.type(torch.float64).log().mean()
+                self.model.zero_grad()
+                loss_mean.backward()
+                self.optimizer.step()
+
+            current_step += 1
+
+            # Append next ground truth and model pred nodes to constructed and model tours.
+            result = self.env.step(teacher_node, predicted_node)
+            step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
+
+
+        reference_length = (
+            self.env.compute_tour_length(self.env.problems, self.env.constructed_tour)
+            .mean()
+            .item()
+        )
+
+        # pred length for model is more like a proxy for quality. 
+        # Possible that this is an invalid tour. 
+        predicted_length = (
+            self.env.compute_tour_length(self.env.problems, self.env.model_tour)
+            .mean()
+            .item()
+        )
+        loss_mean = -step_log_probs.log().mean()
+        return reference_length, predicted_length, loss_mean.item()
+
+
 
     def log_metrics(self, epoch:int, train_reference_length:float, train_predicted_length:float, train_loss:float):
         """Does all the logging, tracking to wandb etc for one epoch"""
@@ -266,3 +319,21 @@ class Stage1Trainer:
                     },
                 )
                 self.tracker.finish()
+
+
+    def continue_training_from_checkpoint(self):
+        """
+        continues training from a checkpoint according to config. 
+        Loads params and model, optim etc. state
+        """
+        model_load = self.trainer_params["model_load"]
+        checkpoint_path = (
+            f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
+        )
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.start_epoch = 1 + model_load["epoch"]
+        self.result_log.set_raw_data(checkpoint["result_log"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.scheduler.last_epoch = model_load["epoch"] - 1
+        self.logger.info("Saved Model Loaded !!")

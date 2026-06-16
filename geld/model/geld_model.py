@@ -97,7 +97,7 @@ class GeldModel(nn.Module):
         beam_search=False,
         beam_size=16,
         reencode_each_step=False,
-    ):
+    ) -> DecodeStepOutput:
         """One MDP step: teacher forcing (SL), greedy, beam search, or RC repair."""
         batch_size = constructed_tour.size(0)
 

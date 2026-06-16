@@ -252,6 +252,8 @@ class TrainingStage1Trainer:
             .mean()
             .item()
         )
+
+        # pred length for model is more like a proxy for quality. Possible that this is an invalid tour. 
         predicted_length = (
             self.env.compute_tour_length(self.env.problems, self.env.model_tour)
             .mean()
