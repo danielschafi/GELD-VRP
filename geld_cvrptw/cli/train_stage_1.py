@@ -81,7 +81,7 @@ def main():
     trainer = Stage1Trainer(
         env_params, model_params, optimizer_params, trainer_params, tracker=tracker
     )
-    trainer.run()
+    trainer.run_training()
 
 
 

@@ -8,7 +8,7 @@ import torch
 from torch.optim import Adam 
 from torch.optim.lr_scheduler import MultiStepLR 
 
-from geld_cvrptw.utils.experiment_tracker import ExperimentTracker
+from geld_cvrptw.utils.experiment_tracker import ExperimentTracker, should_log_batch
 from geld_cvrptw.utils.metrics import AverageMeter, LogData, TimeEstimator
 from geld_cvrptw.utils.logging import (
     get_result_folder,
@@ -87,7 +87,7 @@ class Stage1Trainer:
         self.logger.info("Saved Model Loaded !!")
 
 
-    def run(self):
+    def run_training(self):
         """Run stage 1 supervised training"""
 
         # Load Train Data into memory.
@@ -96,6 +96,7 @@ class Stage1Trainer:
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
 
+            # TODO: Check shuffle 
             self.env.shuffle_data()
             train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
             self.scheduler.step()
@@ -105,6 +106,54 @@ class Stage1Trainer:
             self.save_model_checkpoints_and_progress(epoch)
 
 
+    def _train_one_epoch(self, epoch:int):
+        """One train pass over all training instances"""
+        # Metrics Tracking over batches in epoch
+        reference_length_meter = AverageMeter()
+        predicted_length_meter = AverageMeter()
+        loss_meter = AverageMeter()
+
+        # TODO: Cant / shouldnt we infer from data num_train_samples
+        num_total_samples = self.trainer_params["train_episodes"] 
+        num_processed_samples = 0 
+        batch_log_interval = self.trainer_params["logging"].get(
+            "batch_log_interval", 50
+        )
+
+        # Go over all training samples once
+        while num_processed_samples < num_total_samples:
+            remaining_samples = num_total_samples - num_processed_samples
+            batch_size = min(self.trainer_params["train_batch_size"], remaining_samples)
+
+            # Process Batch
+            reference_length, predicted_length, avg_loss = self._train_one_batch(
+                num_processed_samples, batch_size
+            )
+
+            # Logging & Tracking
+            reference_length_meter.update(reference_length, batch_size)
+            predicted_length_meter.update(predicted_length, batch_size)
+            loss_meter.update(avg_loss, batch_size)
+            num_processed_samples += batch_size
+            if should_log_batch(num_processed_samples, num_total_samples, batch_log_interval):
+                self.logger.info(
+                    f"Epoch {epoch:3d}: Train {num_processed_samples:3d}/{num_total_samples:3d}"
+                    f"({100.0 * num_processed_samples / num_total_samples:1.1f}%)  "
+                    f"Reference length: {reference_length_meter.avg:.4f}, "
+                    f"Predicted length: {predicted_length_meter.avg:.4f}, "
+                    f"Loss: {loss_meter.avg:.4f}"
+                )
+
+        # Get averages over all batches
+        avg_reference_length = reference_length_meter.avg
+        avg_predicted_length = predicted_length_meter.avg 
+        avg_loss = loss_meter.avg
+        return avg_reference_length, avg_predicted_length, avg_loss
+
+        
+    def _train_one_batch(self, batch_offset, batch_size):
+        """Train one batch supervised learning: cross entropy with teacher/grount_truth."""
+        pass
 
     def log_metrics(self, epoch:int, train_reference_length:float, train_predicted_length:float, train_loss:float):
         """Does all the logging, tracking to wandb etc for one epoch"""
