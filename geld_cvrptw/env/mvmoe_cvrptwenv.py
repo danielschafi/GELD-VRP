@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import torch
-import os, pickle
+import os
+import pickle
 import numpy as np
 
 __all__ = ["VRPTWEnv"]

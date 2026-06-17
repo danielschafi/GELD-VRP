@@ -6,7 +6,6 @@ Combining what we can use from MVMoE's VRPPTWEnv.
 from dataclasses import dataclass
 
 import torch
-from geld.model.geometry import tour_length
 from geld_cvrptw.data.loaders import load_cvrptw_data_with_labels
 from geld_cvrptw.data.augmentations import apply_rotation, maybe_reverse_tour
 

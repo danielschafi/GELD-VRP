@@ -1,11 +1,9 @@
 """Environment for synthetic and LEHD training data."""
 
-import pickle
 import random
 from logging import getLogger
 
 import torch
-from tqdm import tqdm
 
 from geld.data.augmentations import (
     apply_rotation,
@@ -13,12 +11,9 @@ from geld.data.augmentations import (
     sample_training_subpath,
 )
 from geld.data.loaders import (
-    load_lehd_line,
-    load_tsp_instances_with_baselines,
     load_cvrptw_data_with_labels,
 )
 from geld.env.base import TSPEnvironmentBase
-from geld.paths import benchmark_data_dir, training_stage_1_data_dir
 
 logger = getLogger(__name__)
 
