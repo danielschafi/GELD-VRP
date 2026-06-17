@@ -214,7 +214,10 @@ class CVRPTWEnv:
         teacher_node_idx: torch.Tensor,
         predicted_node_idx: torch.Tensor,
     ) -> DynamicState:
-        """Append selected nodes to tours and return updated dynamic state."""
+        """
+        Append selected nodes to tours and return updated dynamic state.
+        Masking is already applied for next step decoding. 
+        """
         self.constructed_tour = torch.cat(
             (self.constructed_tour, teacher_node_idx[:, None]), dim=1
         )
