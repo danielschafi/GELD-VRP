@@ -16,8 +16,8 @@ class StaticState:
     Fixed one time, does not change.
     Global Encoder input
     """
-    depot_xy: torch.Tensor
-    node_xy: torch.Tensor 
+    depot_coords: torch.Tensor
+    node_coords: torch.Tensor 
     node_demand: torch.Tensor
     node_service_time: torch.Tensor 
     node_tw_start: torch.Tensor
@@ -32,9 +32,9 @@ class DynamicState:
     Local Decoder input
     """
 
-    selected_count: int # Number of construction steps completed (t).
-    current_node: torch.Tensor | None # shape: (batch,) — last visited node index; None before the first step.
-    current_coord: torch.Tensor # shape: (batch, 2) — coordinates of current_node.
+    num_completed_steps: int # Number of construction steps completed (t).
+    current_node_idx: torch.Tensor | None # shape: (batch,) — last visited node index; None before the first step.
+    current_node_coord: torch.Tensor # shape: (batch, 2) — coordinates of current_node.
     
     constructed_tour: torch.Tensor # shape: (batch, t) — teacher-forced prefix (decoder input).
     model_tour: torch.Tensor # shape: (batch, t) — model's argmax prefix (SL quality tracking). Not necessarily valid tour
@@ -50,81 +50,58 @@ class DynamicState:
 class CVRPTWEnv:
     def __init__(self, **env_params):
         self.data_path = env_params.get("data_path")
-
-        # Const @INIT
-        ####################################
         self.env_params = env_params
-
-        # self.pomo_size = env_params['pomo_size'] # nr of fist possible customer to visit to try. 1 for us
-        # self.loc_scaler = env_params['loc_scaler'] if 'loc_scaler' in env_params.keys() else None
         self.device = (
             torch.device("cuda", torch.cuda.current_device())
             if "device" not in env_params.keys()
             else env_params["device"]
         )
 
-        # Const @Load_Problem
-        ####################################
+        # Full dataset — set by load_raw_data
+        self.full_node_coords = None
+        self.full_node_demand = None
+        self.full_node_tw_start = None
+        self.full_node_tw_end = None
+        self.full_node_service_time = None
+        self.full_label_tours = None
+        self.full_label_costs = None
 
-        self.problem_size = None
-
+        # Active batch — set by load_problems
+        self.batch_offset = None
         self.batch_size = None
-        self.BATCH_IDX = None
-        # self.POMO_IDX = None
-        self.START_NODE = None
-        # IDX.shape: (batch, pomo)
-        self.depot_node_xy = None
-        # shape: (batch, problem+1, 2)
-        self.depot_node_demand = None
-        # shape: (batch, problem+1)
-        self.depot_node_service_time = None
-        # shape: (batch, problem+1)
-        self.depot_node_tw_start = None
-        # shape: (batch, problem+1)
-        self.depot_node_tw_end = None
-        # shape: (batch, problem+1)
-        self.speed = 1.0
-        self.depot_start, self.depot_end = 0.0, 3.0  # tw for depot [0, 3]
+        self.problem_size = None
+        self.batch_coords = None
+        self.batch_demand = None
+        self.batch_tw_start = None
+        self.batch_tw_end = None
+        self.batch_service_time = None
+        self.batch_label_tours = None
+        self.batch_label_costs = None
 
-        # Dynamic-1
-        ####################################
+        self.depot_node_xy = None
+
+        # Episode constants
+        self.speed = 1.0
+        self.depot_tw_start =  0.0
+        self.depot_tw_end = 3.0
+
+        # Dynamic episode state — set by reset(), updated by step()
         self.selected_count = None
         self.current_node = None
-        # shape: (batch, pomo)
-        self.selected_node_list = None
-        # shape: (batch, pomo, 0~)
-
-        # Dynamic-2
-        ####################################
-        self.at_the_depot = None
-        # shape: (batch, pomo)
-        self.load = None
-        # shape: (batch, pomo)
-        self.visited_ninf_flag = None
-        # shape: (batch, pomo, problem+1)
-        self.ninf_mask = None
-        # shape: (batch, pomo, problem+1)
-        self.done = None
-        # shape: (batch, pomo)
-        self.current_time = None
-        # shape: (batch, pomo)
-        self.length = None
-        # shape: (batch, pomo)
-        self.open = None
-        # shape: (batch, pomo)
         self.current_coord = None
-        # shape: (batch, pomo, 2)
+        self.constructed_tour = None
+        self.model_tour = None
+        self.at_the_depot = None
+        self.load = None
+        self.visited_ninf_flag = None
+        self.ninf_mask = None
+        self.current_time = None
+        self.length = None
+        self.done = None
 
         self.static_state: StaticState | None = None
         self.dynamic_state: DynamicState | None = None
 
-        self.problems = None  # this is now more complex Static State attribs?
-        self.batch_label_tours = None
-        self.selected_count = None
-        self.constructed_tour = None
-        self.model_tour = None
-        self.batch_offset = None
-        self.device = torch.device("cpu")
 
     def load_raw_data(self):
         """
@@ -132,13 +109,13 @@ class CVRPTWEnv:
         """
         dataset = load_cvrptw_data_with_labels()
 
-        self.raw_nodes = dataset.coords.requires_grad_(False)
-        self.raw_demand = dataset.demand.requires_grad_(False)
-        self.raw_tw_start = dataset.tw_start.requires_grad_(False)
-        self.raw_tw_end = dataset.tw_end.requires_grad_(False)
-        self.raw_service_time = dataset.service_time.requires_grad_(False)
-        self.raw_label_tours = dataset.label_tours.requires_grad_(False)
-        self.raw_costs = dataset.costs.requires_grad_(False)
+        self.full_node_coords = dataset.coords.requires_grad_(False)
+        self.full_node_demand = dataset.demand.requires_grad_(False)
+        self.full_node_tw_start = dataset.tw_start.requires_grad_(False)
+        self.full_node_tw_end = dataset.tw_end.requires_grad_(False)
+        self.full_node_service_time = dataset.service_time.requires_grad_(False)
+        self.full_label_tours = dataset.label_tours.requires_grad_(False)
+        self.full_label_costs = dataset.costs.requires_grad_(False)
 
     def load_problems(self, batch_offset: int, batch_size: int, train: bool = True):
         """¨
@@ -148,13 +125,13 @@ class CVRPTWEnv:
         self.batch_size = batch_size
 
         # Load just one batch of problems
-        self.batch_coords = self.raw_nodes[batch_offset : batch_offset + batch_size]  # was self.problems
-        self.batch_demand = self.raw_demand[batch_offset : batch_offset + batch_size]
-        self.batch_tw_start = self.raw_tw_start[batch_offset : batch_offset + batch_size]
-        self.batch_tw_end = self.raw_tw_end[batch_offset : batch_offset + batch_size]
-        self.batch_service_time = self.raw_service_time[batch_offset : batch_offset + batch_size]
-        self.batch_label_tours = self.raw_label_tours[batch_offset : batch_offset + batch_size]
-        self.batch_costs = self.raw_costs[batch_offset : batch_offset + batch_size]
+        self.batch_coords = self.full_node_coords[batch_offset : batch_offset + batch_size]  # was self.problems
+        self.batch_demand = self.full_node_demand[batch_offset : batch_offset + batch_size]
+        self.batch_tw_start = self.full_node_tw_start[batch_offset : batch_offset + batch_size]
+        self.batch_tw_end = self.full_node_tw_end[batch_offset : batch_offset + batch_size]
+        self.batch_service_time = self.full_node_service_time[batch_offset : batch_offset + batch_size]
+        self.batch_label_tours = self.full_label_tours[batch_offset : batch_offset + batch_size]
+        self.batch_label_costs = self.full_label_costs[batch_offset : batch_offset + batch_size]
 
         self.problem_size = self.batch_coords.shape[1]
 
@@ -162,22 +139,22 @@ class CVRPTWEnv:
 
         if train:
             rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
-            self.raw_nodes = apply_rotation(self.raw_nodes, rotation_id)
+            self.batch_coords = apply_rotation(self.batch_coords, rotation_id)
 
         self.sync_batch_to_device()
 
     def shuffle_data(self):
         """Shuffle stored training instances."""
         # TODO: Maybe just do it in the load raw data method? then user does not have to think about it in trainer loop
-        index = torch.randperm(len(self.raw_nodes)).long()
+        index = torch.randperm(len(self.full_node_coords)).long()
 
-        self.raw_nodes = self.raw_nodes[index]
-        self.raw_demand = self.raw_demand[index]
-        self.raw_tw_start = self.raw_tw_start[index]
-        self.raw_tw_end = self.raw_tw_end[index]
-        self.raw_service_time = self.raw_service_time[index]
-        self.raw_label_tours = self.raw_label_tours[index]
-        self.raw_costs = self.raw_costs[index]
+        self.full_node_coords = self.full_node_coords[index]
+        self.full_node_demand = self.full_node_demand[index]
+        self.full_node_tw_start = self.full_node_tw_start[index]
+        self.full_node_tw_end = self.full_node_tw_end[index]
+        self.full_node_service_time = self.full_node_service_time[index]
+        self.full_label_tours = self.full_label_tours[index]
+        self.full_label_costs = self.full_label_costs[index]
 
     def reset(self, batch_size=None) -> StaticState:
         """
@@ -239,8 +216,8 @@ class CVRPTWEnv:
 
         # Return Static Problem Definition
         return StaticState(
-            depot_xy=self.batch_coords[:, 0],  # first is depot, maybe not explicitly needed and let model learn that.
-            node_xy=self.batch_coords,
+            depot_coords=self.batch_coords[:, 0],  # first is depot, maybe not explicitly needed and let model learn that.
+            node_coords=self.batch_coords,
             node_demand=self.batch_demand,
             node_tw_start=self.batch_tw_start,
             node_tw_end=self.batch_tw_end,
@@ -251,15 +228,15 @@ class CVRPTWEnv:
         """Apply the selected action and return updated dynamic state."""
         # TODO: implement transition + masking (see mvmoe_cvrptwenv.VRPTWEnv.step)
         return DynamicState(
-            selected_count=self.selected_count,
-            current_node=self.current_node,
+            num_completed_steps=self.selected_count,
+            current_node_idx=self.current_node,
             constructed_tour=self.constructed_tour,
             model_tour=self.model_tour,
             ninf_mask=self.ninf_mask,
             load=self.load,
             current_time=self.current_time,
             length=self.length,
-            current_coord=self.current_coord,
+            current_node_coord=self.current_coord,
             done=self.done,
         )
 
@@ -273,20 +250,20 @@ class CVRPTWEnv:
         """
         self.device = device
 
-        if isinstance(self.raw_nodes, torch.Tensor):
-            self.raw_nodes = self.raw_nodes.to(device)
-        if isinstance(self.raw_demand, torch.Tensor):
-            self.raw_demand = self.raw_demand.to(device)
-        if isinstance(self.raw_tw_start, torch.Tensor):
-            self.raw_tw_start = self.raw_tw_start.to(device)
-        if isinstance(self.raw_tw_end, torch.Tensor):
-            self.raw_tw_end = self.raw_tw_end.to(device)
-        if isinstance(self.raw_service_time, torch.Tensor):
-            self.raw_service_time = self.raw_service_time.to(device)
-        if isinstance(self.raw_label_tours, torch.Tensor):
-            self.raw_label_tours = self.raw_label_tours.to(device)
-        if isinstance(self.raw_costs, torch.Tensor):
-            self.raw_costs = self.raw_costs.to(device)
+        if isinstance(self.full_node_coords, torch.Tensor):
+            self.full_node_coords = self.full_node_coords.to(device)
+        if isinstance(self.full_node_demand, torch.Tensor):
+            self.full_node_demand = self.full_node_demand.to(device)
+        if isinstance(self.full_node_tw_start, torch.Tensor):
+            self.full_node_tw_start = self.full_node_tw_start.to(device)
+        if isinstance(self.full_node_tw_end, torch.Tensor):
+            self.full_node_tw_end = self.full_node_tw_end.to(device)
+        if isinstance(self.full_node_service_time, torch.Tensor):
+            self.full_node_service_time = self.full_node_service_time.to(device)
+        if isinstance(self.full_label_tours, torch.Tensor):
+            self.full_label_tours = self.full_label_tours.to(device)
+        if isinstance(self.full_label_costs, torch.Tensor):
+            self.full_label_costs = self.full_label_costs.to(device)
 
     def sync_batch_to_device(self):
         """Move only the active batch tensors to the environment's device."""
@@ -302,5 +279,5 @@ class CVRPTWEnv:
             self.batch_service_time = self.batch_service_time.to(self.device)
         if isinstance(self.batch_label_tours, torch.Tensor):
             self.batch_label_tours = self.batch_label_tours.to(self.device)
-        if isinstance(self.batch_costs, torch.Tensor):
-            self.batch_costs = self.batch_costs.to(self.device)
+        if isinstance(self.batch_label_costs, torch.Tensor):
+            self.batch_label_costs = self.batch_label_costs.to(self.device)
