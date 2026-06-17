@@ -86,9 +86,9 @@ class CVRPTWEnv:
         self.depot_tw_end = 3.0
 
         # Dynamic episode state — set by reset(), updated by step()
-        self.selected_count = None
-        self.current_node = None
-        self.current_coord = None
+        self.num_completed_steps = None
+        self.current_node_idx = None
+        self.current_node_coord = None
         self.constructed_tour = None
         self.model_tour = None
         self.at_the_depot = None
@@ -156,27 +156,33 @@ class CVRPTWEnv:
         self.full_label_tours = self.full_label_tours[index]
         self.full_label_costs = self.full_label_costs[index]
 
-    def reset(self, batch_size=None) -> StaticState:
-        """
-        Start a new tour-construction episode and return the initial coordinates.
+    def _build_dynamic_state(self) -> DynamicState:
+        return DynamicState(
+            num_completed_steps=self.num_completed_steps,
+            current_node_idx=self.current_node_idx,
+            current_node_coord=self.current_node_coord,
+            constructed_tour=self.constructed_tour,
+            model_tour=self.model_tour,
+            ninf_mask=self.ninf_mask,
+            load=self.load,
+            current_time=self.current_time,
+            length=self.length,
+            done=self.done,
+        )
 
+    def _build_static_state(self) -> StaticState:
+        return StaticState(
+            depot_coords=self.batch_coords[:, 0],
+            node_coords=self.batch_coords,
+            node_demand=self.batch_demand,
+            node_tw_start=self.batch_tw_start,
+            node_tw_end=self.batch_tw_end,
+            node_service_time=self.batch_service_time,
+            label_tour=self.batch_label_tours,
+        )
 
-        containers for
-
-        - self.constructed_tour: decoder input  / ground truth path (t-1 steps of it) / autoregressively built tour
-        - self.model_tour: tour of model argmax predictions at each step
-        - self.nodes_selected: nr of constuction steps completed
-        - label_tour: complete ground truth reference tour
-
-        Returns:
-        - StepResult with self.problems=coordinates and done=false
-        """
-
-        #############################################
-        # Init env internal static state information
-        # Tracking of tour
-        #############################################
-
+    def reset(self, batch_size=None) -> tuple[StaticState, DynamicState]:
+        """Start a new episode; return static and initial dynamic state."""
         if batch_size is not None:
             self.batch_size = batch_size
 
@@ -185,60 +191,44 @@ class CVRPTWEnv:
         # Training: Nodes that have been predicted by argmax over model pred.
         self.model_tour = torch.zeros((self.batch_size, 0), dtype=torch.long, device=self.device)
 
-        ############################################
-        # Init containers for masking etc
-        ############################################
+        self.num_completed_steps = 0
+        self.current_node_idx = None
+        self.current_node_coord = self.batch_coords[:, 0, :]
 
-        # Num nodes already predicted (t-1)
-        self.selected_count = 0
-        self.current_node = None
-        # shape: (batch)
-
-        # self.selected_node_list = torch.zeros((self.batch_size, 0), dtype=torch.long).to(self.device) -> is constructed tour here
-        # shape: (batch, 0~)
-
-        self.at_the_depot = torch.ones(size=(self.batch_size), dtype=torch.bool).to(self.device)
-        # shape: (batch)
-        self.load = torch.ones(size=(self.batch_size)).to(self.device)
-        # shape: (batch)
-        self.visited_ninf_flag = torch.zeros(size=(self.batch_size, self.problem_size + 1)).to(self.device)
-        # shape: (batch, problem+1)
-        self.ninf_mask = torch.zeros(size=(self.batch_size, self.problem_size + 1)).to(self.device)
-        # shape: (batch, problem+1)
-        self.done = torch.zeros(size=(self.batch_size), dtype=torch.bool).to(self.device)  # was finished in MVMoE
-        # shape: (batch)
-        self.current_time = torch.zeros(size=(self.batch_size)).to(self.device)
-        # shape: (batch)
-        self.length = torch.zeros(size=(self.batch_size)).to(self.device)
-        # shape: (batch)
-        self.current_coord = self.depot_node_xy[:, :1, :]  # depot
-        # shape: (batch, 2)
-
-        # Return Static Problem Definition
-        return StaticState(
-            depot_coords=self.batch_coords[:, 0],  # first is depot, maybe not explicitly needed and let model learn that.
-            node_coords=self.batch_coords,
-            node_demand=self.batch_demand,
-            node_tw_start=self.batch_tw_start,
-            node_tw_end=self.batch_tw_end,
-            node_service_time=self.batch_service_time,
+        self.at_the_depot = torch.ones(self.batch_size, dtype=torch.bool, device=self.device)
+        self.load = torch.ones(self.batch_size, device=self.device)
+        self.visited_ninf_flag = torch.zeros(
+            self.batch_size, self.problem_size + 1, device=self.device
         )
+        self.ninf_mask = torch.zeros(self.batch_size, self.problem_size + 1, device=self.device)
+        self.done = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
+        self.current_time = torch.zeros(self.batch_size, device=self.device)
+        self.length = torch.zeros(self.batch_size, device=self.device)
 
-    def step(self) -> DynamicState:
-        """Apply the selected action and return updated dynamic state."""
-        # TODO: implement transition + masking (see mvmoe_cvrptwenv.VRPTWEnv.step)
-        return DynamicState(
-            num_completed_steps=self.selected_count,
-            current_node_idx=self.current_node,
-            constructed_tour=self.constructed_tour,
-            model_tour=self.model_tour,
-            ninf_mask=self.ninf_mask,
-            load=self.load,
-            current_time=self.current_time,
-            length=self.length,
-            current_node_coord=self.current_coord,
-            done=self.done,
+        self.static_state = self._build_static_state()
+        self.dynamic_state = self._build_dynamic_state()
+        return self.static_state, self.dynamic_state
+
+    def step(
+        self,
+        teacher_node_idx: torch.Tensor,
+        predicted_node_idx: torch.Tensor,
+    ) -> DynamicState:
+        """Append selected nodes to tours and return updated dynamic state."""
+        self.constructed_tour = torch.cat(
+            (self.constructed_tour, teacher_node_idx[:, None]), dim=1
         )
+        self.model_tour = torch.cat(
+            (self.model_tour, predicted_node_idx[:, None]), dim=1
+        )
+        self.num_completed_steps += 1
+        self.current_node_idx = teacher_node_idx
+        self.at_the_depot = teacher_node_idx == 0
+        batch_idx = torch.arange(self.batch_size, device=self.device)
+        self.current_node_coord = self.batch_coords[batch_idx, teacher_node_idx]
+
+        self.dynamic_state = self._build_dynamic_state()
+        return self.dynamic_state
 
 
     # COMPUTE DEVICE MANAGEMENT
