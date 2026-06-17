@@ -66,9 +66,7 @@ class RegionAverageLinearAttention(nn.Module):
         v = reshape_by_heads(self.Wv(x), head_num=head_num)
         batch_size = k.size(0)
         key_dim = k.size(3)
-        region_mask = torch.zeros(
-            batch_size, 9, requires_grad=False, dtype=torch.float, device=x.device
-        )
+        region_mask = torch.zeros(batch_size, 9, requires_grad=False, dtype=torch.float, device=x.device)
         region_mask.scatter_add_(
             dim=1,
             index=index_region,
@@ -86,9 +84,7 @@ class RegionAverageLinearAttention(nn.Module):
             index=index_region.unsqueeze(-1).expand(query_proj.shape),
             src=query_proj,
         )
-        agent = reshape_by_heads(
-            region_sums / region_mask.unsqueeze(-1), head_num=head_num
-        )
+        agent = reshape_by_heads(region_sums / region_mask.unsqueeze(-1), head_num=head_num)
 
         score = torch.matmul(q, agent.transpose(2, 3)) * (key_dim) ** (-0.5)
         attention1 = F.softmax(score, dim=-1)

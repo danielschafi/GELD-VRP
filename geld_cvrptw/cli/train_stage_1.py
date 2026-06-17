@@ -24,9 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument(
-        "--wandb", action="store_true", help="Log metrics to Weights & Biases"
-    )
+    parser.add_argument("--wandb", action="store_true", help="Log metrics to Weights & Biases")
     parser.add_argument("--wandb-project", type=str, default="geld")
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument(
@@ -46,9 +44,7 @@ def main():
     env_params = default_env_params(mode="train")
     model_params = default_model_params(mode="train")
     optimizer_params = default_training_stage_1_optimizer_params()
-    trainer_params = default_training_stage_1_params(
-        use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device
-    )
+    trainer_params = default_training_stage_1_params(use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device)
 
     if args.debug:
         trainer_params["epochs"] = 2
@@ -64,7 +60,6 @@ def main():
     logger = logging.getLogger("root")
     logger.info(f"Starting stage-1 training with params: {trainer_params}")
 
-
     tracker = ExperimentTracker(
         get_result_folder(),
         run_type="train_stage_1",
@@ -78,12 +73,8 @@ def main():
             "trainer_params": trainer_params,
         },
     )
-    trainer = Stage1Trainer(
-        env_params, model_params, optimizer_params, trainer_params, tracker=tracker
-    )
+    trainer = Stage1Trainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)
     trainer.run_training()
-
-
 
 
 if __name__ == "__main__":

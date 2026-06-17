@@ -25,21 +25,13 @@ class BeamSearch:
         self.dtype_long = dtype_long
         self.device = device
 
-        self.start_nodes = torch.zeros(batch_size, beam_size, device=device).type(
-            dtype_long
-        )
+        self.start_nodes = torch.zeros(batch_size, beam_size, device=device).type(dtype_long)
         if random_start:
-            self.start_nodes = torch.randint(
-                0, num_nodes, (batch_size, beam_size), device=device
-            ).type(dtype_long)
+            self.start_nodes = torch.randint(0, num_nodes, (batch_size, beam_size), device=device).type(dtype_long)
 
-        self.mask = torch.ones(batch_size, beam_size, num_nodes, device=device).type(
-            dtype_float
-        )
+        self.mask = torch.ones(batch_size, beam_size, num_nodes, device=device).type(dtype_float)
         self.update_mask(self.start_nodes)
-        self.scores = torch.zeros(batch_size, beam_size, device=device).type(
-            dtype_float
-        )
+        self.scores = torch.zeros(batch_size, beam_size, device=device).type(dtype_float)
         self.all_scores = []
         self.parent_beam_indices = []
         self.next_nodes = [self.start_nodes]
@@ -49,32 +41,24 @@ class BeamSearch:
         """Expand beam, retain top-B sub-tours, and update visit mask."""
         if len(self.parent_beam_indices) > 0:
             if self.probs_type == "raw":
-                beam_scores = trans_probs * self.scores.unsqueeze(2).expand_as(
-                    trans_probs
-                )
+                beam_scores = trans_probs * self.scores.unsqueeze(2).expand_as(trans_probs)
             else:
-                beam_scores = trans_probs + self.scores.unsqueeze(2).expand_as(
-                    trans_probs
-                )
+                beam_scores = trans_probs + self.scores.unsqueeze(2).expand_as(trans_probs)
         else:
             beam_scores = trans_probs
             if self.probs_type == "raw":
-                beam_scores[:, 1:] = torch.zeros(
-                    beam_scores[:, 1:].size(), device=self.device
-                ).type(self.dtype_float)
+                beam_scores[:, 1:] = torch.zeros(beam_scores[:, 1:].size(), device=self.device).type(self.dtype_float)
             else:
-                beam_scores[:, 1:] = -1e20 * torch.ones(
-                    beam_scores[:, 1:].size(), device=self.device
-                ).type(self.dtype_float)
+                beam_scores[:, 1:] = -1e20 * torch.ones(beam_scores[:, 1:].size(), device=self.device).type(
+                    self.dtype_float
+                )
 
         beam_scores = beam_scores * self.mask
         beam_scores = beam_scores.view(self.batch_size, -1)
         best_scores, best_scores_id = beam_scores.topk(self.beam_size, 1, True, True)
         self.scores = best_scores
 
-        parent_beam_idx = torch.div(
-            best_scores_id, self.num_nodes, rounding_mode="trunc"
-        )
+        parent_beam_idx = torch.div(best_scores_id, self.num_nodes, rounding_mode="trunc")
         self.parent_beam_indices.append(parent_beam_idx)
         new_nodes = best_scores_id - parent_beam_idx * self.num_nodes
         self.next_nodes.append(new_nodes)

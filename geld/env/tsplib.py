@@ -29,16 +29,10 @@ class TSPLIBEnvironment(TSPEnvironmentBase):
         self.batch_offset = batch_offset
         self.batch_size = batch_size
         if not self.eval_tsplib:
-            self.problems = self.raw_data_nodes[
-                batch_offset : batch_offset + batch_size
-            ]
-            self.label_tour = self.raw_data_tours[
-                batch_offset : batch_offset + batch_size
-            ]
+            self.problems = self.raw_data_nodes[batch_offset : batch_offset + batch_size]
+            self.label_tour = self.raw_data_tours[batch_offset : batch_offset + batch_size]
             if self.use_subpath_augmentation:
-                self.problems, self.label_tour = sample_training_subpath(
-                    self.problems, self.label_tour, mode="train"
-                )
+                self.problems, self.label_tour = sample_training_subpath(self.problems, self.label_tour, mode="train")
             self.label_tour = maybe_reverse_tour(self.label_tour)
         else:
             self.tsplib_name = name

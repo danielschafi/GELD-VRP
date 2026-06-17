@@ -38,25 +38,19 @@ class TrainingStage1Trainer:
         self.result_folder = get_result_folder()
         self.result_log = LogData()
         self.tracker = tracker
-        self.device = setup_device(
-            trainer_params["use_cuda"], trainer_params["cuda_device_num"]
-        )
+        self.device = setup_device(trainer_params["use_cuda"], trainer_params["cuda_device_num"])
 
         torch.manual_seed(2024)
         self.model = GeldModel(**self.model_params).to(self.device)
         self.env = SyntheticEnvironment(**self.env_params)
         self.env.set_device(self.device)
-        self.optimizer = Optimizer(
-            self.model.parameters(), **self.optimizer_params["optimizer"]
-        )
+        self.optimizer = Optimizer(self.model.parameters(), **self.optimizer_params["optimizer"])
         self.scheduler = Scheduler(self.optimizer, **self.optimizer_params["scheduler"])
 
         self.start_epoch = 1
         model_load = trainer_params["model_load"]
         if model_load["enable"]:
-            checkpoint_path = (
-                f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
-            )
+            checkpoint_path = f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
             checkpoint = torch.load(checkpoint_path, map_location=self.device)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.start_epoch = 1 + model_load["epoch"]
@@ -74,26 +68,16 @@ class TrainingStage1Trainer:
         self.env.set_device(self.device)
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
-            self.logger.info(
-                "================================================================="
-            )
+            self.logger.info("=================================================================")
             self.env.shuffle_data()
-            train_reference_length, train_predicted_length, train_loss = (
-                self._train_one_epoch(epoch)
-            )
+            train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
             self.scheduler.step()
 
-            self.result_log.append(
-                "train_reference_length", epoch, train_reference_length
-            )
-            self.result_log.append(
-                "train_predicted_length", epoch, train_predicted_length
-            )
+            self.result_log.append("train_reference_length", epoch, train_reference_length)
+            self.result_log.append("train_predicted_length", epoch, train_predicted_length)
             self.result_log.append("train_loss", epoch, train_loss)
 
-            elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(
-                epoch, self.trainer_params["epochs"]
-            )
+            elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(epoch, self.trainer_params["epochs"])
             self.logger.info(
                 f"Epoch {epoch:3d}/{self.trainer_params['epochs']:3d}: "
                 f"ref={train_reference_length:.4f}, pred={train_predicted_length:.4f}, "
@@ -188,16 +172,12 @@ class TrainingStage1Trainer:
         loss_meter = AverageMeter()
         train_num_episode = self.trainer_params["train_episodes"]
         episode = 0
-        batch_log_interval = self.trainer_params["logging"].get(
-            "batch_log_interval", 50
-        )
+        batch_log_interval = self.trainer_params["logging"].get("batch_log_interval", 50)
 
         while episode < train_num_episode:
             remaining = train_num_episode - episode
             batch_size = min(self.trainer_params["train_batch_size"], remaining)
-            reference_length, predicted_length, avg_loss = self._train_one_batch(
-                episode, batch_size
-            )
+            reference_length, predicted_length, avg_loss = self._train_one_batch(episode, batch_size)
             reference_length_meter.update(reference_length, batch_size)
             predicted_length_meter.update(predicted_length, batch_size)
             loss_meter.update(avg_loss, batch_size)
@@ -232,9 +212,7 @@ class TrainingStage1Trainer:
                 predicted_node = self.env.label_tour[:, 0]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             else:
-                output = self.model(
-                    self.env.constructed_tour, self.env.label_tour, current_step
-                )
+                output = self.model(self.env.constructed_tour, self.env.label_tour, current_step)
                 teacher_node = output.teacher_action
                 predicted_node = output.predicted_action
                 step_prob = output.step_prob
@@ -247,17 +225,7 @@ class TrainingStage1Trainer:
             result = self.env.step(teacher_node, predicted_node)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
 
-        reference_length = (
-            self.env.compute_tour_length(self.env.problems, self.env.constructed_tour)
-            .mean()
-            .item()
-        )
-
-        # pred length for model is more like a proxy for quality. Possible that this is an invalid tour. 
-        predicted_length = (
-            self.env.compute_tour_length(self.env.problems, self.env.model_tour)
-            .mean()
-            .item()
-        )
+        reference_length = self.env.compute_tour_length(self.env.problems, self.env.constructed_tour).mean().item()
+        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.model_tour).mean().item()
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()

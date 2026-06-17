@@ -24,9 +24,7 @@ class TSPEnvironmentBase:
         self.env_params = env_params
         self.problem_size = None
         self.data_path = env_params.get("data_path")
-        self.use_subpath_augmentation = env_params.get(
-            "use_subpath_augmentation", False
-        )
+        self.use_subpath_augmentation = env_params.get("use_subpath_augmentation", False)
         self.eval_tsplib = env_params.get("eval_tsplib", False)
         self.batch_size = None
         self.problems = None
@@ -71,38 +69,30 @@ class TSPEnvironmentBase:
         Start a new tour-construction episode and return the initial coordinates.
 
         containers for
-        
+
         - self.constructed_tour: decoder input  / ground truth path (t-1 steps of it) / autoregressively built tour
         - self.model_tour: tour of model argmax predictions at each step
         - self.nodes_selected: nr of constuction steps completed
         - label_tour: complete ground truth reference tour
-        
+
         Returns:
         - StepResult with self.problems=coordinates and done=false
         """
         if batch_size is not None:
             self.batch_size = batch_size
-        self.constructed_tour = torch.zeros(
-            (self.batch_size, 0), dtype=torch.long, device=self.problems.device
-        )
-        self.model_tour = torch.zeros(
-            (self.batch_size, 0), dtype=torch.long, device=self.problems.device
-        )
+        self.constructed_tour = torch.zeros((self.batch_size, 0), dtype=torch.long, device=self.problems.device)
+        self.model_tour = torch.zeros((self.batch_size, 0), dtype=torch.long, device=self.problems.device)
         self.nodes_selected = 0
         return StepResult(coordinates=self.problems, done=False)
 
     def step(self, teacher_node, predicted_node) -> StepResult:
         """Append selected nodes and compute tour lengths when the tour completes."""
         self.nodes_selected += 1
-        self.constructed_tour = torch.cat(
-            (self.constructed_tour, teacher_node[:, None]), dim=1
-        )
+        self.constructed_tour = torch.cat((self.constructed_tour, teacher_node[:, None]), dim=1)
         self.model_tour = torch.cat((self.model_tour, predicted_node[:, None]), dim=1)
         done = self.nodes_selected == self.problems.shape[1]
         if done:
-            reference_length = self.compute_tour_length(
-                self.problems, self.constructed_tour
-            )
+            reference_length = self.compute_tour_length(self.problems, self.constructed_tour)
             predicted_length = self.compute_tour_length(self.problems, self.model_tour)
             return StepResult(
                 coordinates=self.problems,
@@ -115,16 +105,12 @@ class TSPEnvironmentBase:
     def step_beam(self, selected_node, beam=16) -> StepResult:
         """Advance beam-expanded tours and return lengths when done."""
         self.nodes_selected += 1
-        self.constructed_tour = torch.cat(
-            (self.constructed_tour, selected_node[:, None]), dim=1
-        )
+        self.constructed_tour = torch.cat((self.constructed_tour, selected_node[:, None]), dim=1)
         done = self.nodes_selected == self.problems.shape[1]
         if done:
             expanded = torch.repeat_interleave(self.problems, beam, 0)
             tour_lengths = self.compute_tour_length(expanded, self.constructed_tour)
-            return StepResult(
-                coordinates=self.problems, reference_length=tour_lengths, done=done
-            )
+            return StepResult(coordinates=self.problems, reference_length=tour_lengths, done=done)
         return StepResult(coordinates=self.problems, done=done)
 
     def compute_tour_length(self, problems, tour, return_known_optimal: bool = False):

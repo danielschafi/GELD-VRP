@@ -1,7 +1,6 @@
 from geld_cvrptw.config.paths import project_root, training_stage_1_data_dir
 
 
-
 def default_model_params(mode: str = "train") -> dict:
     """Default GE/LD hyperparameters (h=128, 6 LD layers, 8 heads)."""
     return {
@@ -14,9 +13,7 @@ def default_model_params(mode: str = "train") -> dict:
     }
 
 
-def default_env_params(
-    mode: str = "train", use_subpath_augmentation: bool = True
-) -> dict:
+def default_env_params(mode: str = "train", use_subpath_augmentation: bool = True) -> dict:
     """Default environment settings with LEHD TSP-100 training path."""
     training_path = training_stage_1_data_dir() / "train_TSP100_n100w-001.txt"
     return {
@@ -43,15 +40,14 @@ def default_training_stage_2_optimizer_params() -> dict:
     return {"optimizer": {"lr": 1e-5}}
 
 
-def default_training_stage_1_params(
-    use_cuda: bool = True, cuda_device_num: int = 0
-) -> dict:
+def default_training_stage_1_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
     """Stage-1 SL training defaults (n_e1=50 epochs, batch 1024)."""
     return {
         "use_cuda": use_cuda,
         "cuda_device_num": cuda_device_num,
         "epochs": 50,
         "train_episodes": 1_000_000,
+        "n_customers": 100,  # how many customer nodes per sample
         "train_batch_size": 1024,
         "logging": {
             "model_save_interval": 1,

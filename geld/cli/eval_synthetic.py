@@ -31,12 +31,8 @@ def seed_everything(seed=2024):
 
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser for synthetic benchmark evaluation."""
-    parser = argparse.ArgumentParser(
-        description="Evaluate GELD on synthetic benchmarks"
-    )
-    parser.add_argument(
-        "--checkpoint-path", type=str, default="result/pre_trained_model"
-    )
+    parser = argparse.ArgumentParser(description="Evaluate GELD on synthetic benchmarks")
+    parser.add_argument("--checkpoint-path", type=str, default="result/pre_trained_model")
     parser.add_argument("--checkpoint-epoch", type=int, default=49)
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
@@ -60,9 +56,7 @@ def main():
 
     env_params = default_env_params(mode="test", use_subpath_augmentation=False)
     model_params = default_model_params(mode="test")
-    eval_params = default_eval_params(
-        use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device
-    )
+    eval_params = default_eval_params(use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device)
     eval_params["model_load"] = {
         "path": args.checkpoint_path,
         "epoch": args.checkpoint_epoch,
@@ -97,9 +91,7 @@ def main():
                 eval_params["test_episodes"] = 20
                 eval_params["test_batch_size"] = 20
 
-            logging.getLogger("root").info(
-                f"Evaluating size={size}, distribution={distribution}"
-            )
+            logging.getLogger("root").info(f"Evaluating size={size}, distribution={distribution}")
             evaluator = InferenceEvaluator(
                 env_params,
                 model_params,

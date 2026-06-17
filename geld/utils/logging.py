@@ -23,9 +23,7 @@ def get_result_folder() -> Path:
     global _result_folder
     if _result_folder is None:
         process_start_time = datetime.now(pytz.timezone("Asia/Seoul"))
-        _result_folder = (
-            project_root() / "result" / process_start_time.strftime("%Y%m%d_%H%M%S")
-        )
+        _result_folder = project_root() / "result" / process_start_time.strftime("%Y%m%d_%H%M%S")
     return _result_folder
 
 
@@ -50,9 +48,7 @@ def create_logger(log_file: dict | None = None, **kwargs):
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        "[%(asctime)s] %(filename)s(%(lineno)d) : %(message)s", "%Y-%m-%d %H:%M:%S"
-    )
+    formatter = logging.Formatter("[%(asctime)s] %(filename)s(%(lineno)d) : %(message)s", "%Y-%m-%d %H:%M:%S")
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
@@ -74,9 +70,7 @@ def util_print_log_array(logger, result_log: LogData):
         logger.info(f"{key}_list = {result_log.get(key)}")
 
 
-def util_save_log_image_with_label(
-    result_file_prefix, img_params, result_log: LogData, labels=None
-):
+def util_save_log_image_with_label(result_file_prefix, img_params, result_log: LogData, labels=None):
     """Save a training curve plot as JPG."""
     dirname = os.path.dirname(result_file_prefix)
     os.makedirs(dirname, exist_ok=True)

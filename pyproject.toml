@@ -39,3 +39,6 @@ pythonpath = ["."]
 markers = [
     "smoke: end-to-end GPU/SLURM smoke tests (may take several minutes)",
 ]
+
+[tool.ruff]
+line-length = 120

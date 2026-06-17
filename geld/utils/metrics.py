@@ -131,14 +131,6 @@ class TimeEstimator:
     def get_est_string(self, count, total):
         """Return formatted elapsed/remaining time strings."""
         elapsed_hours, remain_hours = self.get_est(count, total)
-        elapsed_time_str = (
-            f"{elapsed_hours:.2f}h"
-            if elapsed_hours > 1.0
-            else f"{elapsed_hours * 60:.2f}m"
-        )
-        remain_time_str = (
-            f"{remain_hours:.2f}h"
-            if remain_hours > 1.0
-            else f"{remain_hours * 60:.2f}m"
-        )
+        elapsed_time_str = f"{elapsed_hours:.2f}h" if elapsed_hours > 1.0 else f"{elapsed_hours * 60:.2f}m"
+        remain_time_str = f"{remain_hours:.2f}h" if remain_hours > 1.0 else f"{remain_hours * 60:.2f}m"
         return elapsed_time_str, remain_time_str

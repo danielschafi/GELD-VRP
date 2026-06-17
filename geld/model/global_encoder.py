@@ -36,9 +36,7 @@ class EncoderLayer(nn.Module):
 
     def forward(self, input_tensor, index_region):
         """Apply RALA and FFN with residual connections."""
-        multi_head_out = self.multi_head_combine(
-            self.attentionlayer(input_tensor, index_region)
-        )
+        multi_head_out = self.multi_head_combine(self.attentionlayer(input_tensor, index_region))
         out1 = input_tensor + multi_head_out
         hidden_states = self.feedForward(out1)
         return out1 + hidden_states

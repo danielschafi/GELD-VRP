@@ -68,9 +68,7 @@ class GeldModel(nn.Module):
 
     def load_state_dict(self, state_dict, strict=True):
         """Load weights after remapping legacy decoder key names."""
-        return super().load_state_dict(
-            self._remap_legacy_state_dict(state_dict), strict=strict
-        )
+        return super().load_state_dict(self._remap_legacy_state_dict(state_dict), strict=strict)
 
     def prepare_instance(self, coordinates, normalize: bool = True):
         """Normalize topology, build distance matrix, and assign RALA regions."""
@@ -81,9 +79,7 @@ class GeldModel(nn.Module):
 
         if coordinates.size(1) > LARGE_INSTANCE_THRESHOLD:
             self.decoder.data = self.data
-            self.dis_matrix = compute_distance_matrix(
-                self.data, LARGE_INSTANCE_THRESHOLD
-            )
+            self.dis_matrix = compute_distance_matrix(self.data, LARGE_INSTANCE_THRESHOLD)
         else:
             self.dis_matrix = build_distance_matrix(self.data)
         self.region = map_coordinates_to_regions(self.data)
@@ -106,9 +102,7 @@ class GeldModel(nn.Module):
             probs = self.decoder(encoded_nodes, constructed_tour, self.dis_matrix)
             predicted = probs.argmax(dim=1)
             teacher = label_tour[:, current_step - 1]
-            step_prob = probs[
-                torch.arange(batch_size)[:, None], teacher[:, None]
-            ].reshape(batch_size, 1)
+            step_prob = probs[torch.arange(batch_size)[:, None], teacher[:, None]].reshape(batch_size, 1)
             return DecodeStepOutput(
                 teacher_action=teacher,
                 step_prob=step_prob,
@@ -121,9 +115,7 @@ class GeldModel(nn.Module):
                     self.encoded_nodes = self.encoder(self.data, self.region)
 
                 if not beam_search:
-                    probs = self.decoder(
-                        self.encoded_nodes, constructed_tour, self.dis_matrix
-                    )
+                    probs = self.decoder(self.encoded_nodes, constructed_tour, self.dis_matrix)
                     predicted = probs.argmax(dim=1)
                     return DecodeStepOutput(predicted_action=predicted)
 

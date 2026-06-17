@@ -5,8 +5,8 @@ class that runs the stage 1 training procedure with supervised learning labels.
 from logging import getLogger
 
 import torch
-from torch.optim import Adam 
-from torch.optim.lr_scheduler import MultiStepLR 
+from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiStepLR
 
 from geld_cvrptw.utils.experiment_tracker import ExperimentTracker, should_log_batch
 from geld_cvrptw.utils.metrics import AverageMeter, LogData, TimeEstimator
@@ -21,14 +21,18 @@ from geld.utils.device import setup_device
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv
 
+
 class Stage1Trainer:
-    """ Stage 1 trainer. Trains on small instances (100 customers)"""
-    def __init__(self, 
-        env_params:dict,
-        model_params:dict,
-        optimizer_params:dict,
-        trainer_params:dict,
-        tracker:ExperimentTracker | None = None):
+    """Stage 1 trainer. Trains on small instances (100 customers)"""
+
+    def __init__(
+        self,
+        env_params: dict,
+        model_params: dict,
+        optimizer_params: dict,
+        trainer_params: dict,
+        tracker: ExperimentTracker | None = None,
+    ):
 
         # Setup logging
         self.logger = getLogger(name="trainer")
@@ -37,9 +41,7 @@ class Stage1Trainer:
         self.tracker = tracker
 
         # Where to run training
-        self.device = setup_device(
-            trainer_params["use_cuda"], trainer_params["cuda_device_num"]
-        )
+        self.device = setup_device(trainer_params["use_cuda"], trainer_params["cuda_device_num"])
         """Initializes model etc with hyperparams from config. """
         # Reproducability
         torch.manual_seed(42)
@@ -52,12 +54,10 @@ class Stage1Trainer:
 
         # Initialize model, env, optim + scheduler and set hyperparams
         self.model = GeldCvrptwModel(**self.model_params).to(self.device)  # TODO: implemenmt
-        self.env = CVRPTWEnv(**self.env_params) # TODO: Implement
-        self.env.set_device(self.device) # TODO: Implement
+        self.env = CVRPTWEnv(**self.env_params)  # TODO: Implement
+        self.env.set_device(self.device)  # TODO: Implement
 
-        self.optimizer = Adam(
-            self.model.parameters(), **self.optimizer_params["optimizer"]
-        )
+        self.optimizer = Adam(self.model.parameters(), **self.optimizer_params["optimizer"])
         self.scheduler = MultiStepLR(self.optimizer, **self.optimizer_params["scheduler"])
 
         # Training restart / continue handling
@@ -68,7 +68,6 @@ class Stage1Trainer:
         # Training time estimator
         self.time_estimator = TimeEstimator()
 
-
     def run_training(self):
         """Run stage 1 supervised training"""
 
@@ -77,8 +76,6 @@ class Stage1Trainer:
         self.env.set_device(self.device)
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
-
-            # TODO: Check shuffle 
             self.env.shuffle_data()
             train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
             self.scheduler.step()
@@ -87,8 +84,7 @@ class Stage1Trainer:
             self.log_training_curve(epoch)
             self.save_model_checkpoints_and_progress(epoch)
 
-
-    def _train_one_epoch(self, epoch:int):
+    def _train_one_epoch(self, epoch: int):
         """One train pass over all training instances"""
         # Metrics Tracking over batches in epoch
         reference_length_meter = AverageMeter()
@@ -96,11 +92,9 @@ class Stage1Trainer:
         loss_meter = AverageMeter()
 
         # TODO: Cant / shouldnt we infer from data num_train_samples
-        num_total_samples = self.trainer_params["train_episodes"] 
-        num_processed_samples = 0 
-        batch_log_interval = self.trainer_params["logging"].get(
-            "batch_log_interval", 50
-        )
+        num_total_samples = self.trainer_params["train_episodes"]
+        num_processed_samples = 0
+        batch_log_interval = self.trainer_params["logging"].get("batch_log_interval", 50)
 
         # Go over all training samples once
         while num_processed_samples < num_total_samples:
@@ -108,9 +102,7 @@ class Stage1Trainer:
             batch_size = min(self.trainer_params["train_batch_size"], remaining_samples)
 
             # Process Batch
-            reference_length, predicted_length, avg_loss = self._train_one_batch(
-                num_processed_samples, batch_size
-            )
+            reference_length, predicted_length, avg_loss = self._train_one_batch(num_processed_samples, batch_size)
 
             # Logging & Tracking
             reference_length_meter.update(reference_length, batch_size)
@@ -128,17 +120,16 @@ class Stage1Trainer:
 
         # Get averages over all batches
         avg_reference_length = reference_length_meter.avg
-        avg_predicted_length = predicted_length_meter.avg 
+        avg_predicted_length = predicted_length_meter.avg
         avg_loss = loss_meter.avg
 
         return avg_reference_length, avg_predicted_length, avg_loss
 
-        
-    def _train_one_batch(self, batch_offset:int, batch_size:int):
+    def _train_one_batch(self, batch_offset: int, batch_size: int):
         """
         Train one batch supervised learning: cross entropy with teacher/grount_truth.
-        Each sample is used for problem_size steps. 
-        At each step of the teacher tour we ask the model, 
+        Each sample is used for problem_size steps.
+        At each step of the teacher tour we ask the model,
         where it would go next and then compute cross entropy for the outputted probability distribution.
         """
         self.model.train()
@@ -160,24 +151,24 @@ class Stage1Trainer:
         current_step = 0
         while not result.done:
             # Decoder needs depot and current node (+knfeasible) to make prediction. Thats why first two steps fixed.
-            # Also kind of works for cvrptw since in our data its a continuous tour 
+            # Also kind of works for cvrptw since in our data its a continuous tour
             if current_step == 0:
                 # append last in cyclic (this is a node before return to depot)
-                teacher_node = self.env.label_tour[:, -1] # cyclic. last of tour
-                predicted_node = self.env.label_tour[: -1]
+                teacher_node = self.env.batch_label_tours[:, -1]  # cyclic. last of tour
+                predicted_node = self.env.batch_label_tours[:-1]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             elif current_step == 1:
                 # append depot
-                teacher_node = self.env.label_tour[:, 0] # cyclic. last of tour
-                predicted_node = self.env.label_tour[: 0]
+                teacher_node = self.env.batch_label_tours[:, 0]  # cyclic. last of tour
+                predicted_node = self.env.batch_label_tours[:0]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             else:
                 # given t-1 labels from ground truths predict the t-th
-                output = self.model(self.env.constructed_tour, self.env.label_tour, current_step)
+                output = self.model(self.env.constructed_tour, self.env.batch_label_tours, current_step)
 
-                teacher_node = output.teacher_action # what the ground truth was
-                predicted_node = output.predicted_action # what the models argmax pred is
-                step_prob = output.step_prob 
+                teacher_node = output.teacher_action  # what the ground truth was
+                predicted_node = output.predicted_action  # what the models argmax pred is
+                step_prob = output.step_prob
                 loss_mean = -step_prob.type(torch.float64).log().mean()
                 self.model.zero_grad()
                 loss_mean.backward()
@@ -189,43 +180,30 @@ class Stage1Trainer:
             result = self.env.step(teacher_node, predicted_node)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
 
+        reference_length = self.env.compute_tour_length(self.env.problems, self.env.constructed_tour).mean().item()
 
-        reference_length = (
-            self.env.compute_tour_length(self.env.problems, self.env.constructed_tour)
-            .mean()
-            .item()
-        )
-
-        # pred length for model is more like a proxy for quality. 
-        # Possible that this is an invalid tour. 
-        predicted_length = (
-            self.env.compute_tour_length(self.env.problems, self.env.model_tour)
-            .mean()
-            .item()
-        )
+        # pred length for model is more like a proxy for quality.
+        # Possible that this is an invalid tour.
+        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.model_tour).mean().item()
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()
 
-
-
-    def log_metrics(self, epoch:int, train_reference_length:float, train_predicted_length:float, train_loss:float):
+    def log_metrics(
+        self,
+        epoch: int,
+        train_reference_length: float,
+        train_predicted_length: float,
+        train_loss: float,
+    ):
         """Does all the logging, tracking to wandb etc for one epoch"""
-        self.logger.info(
-            "================================================================="
-        )
+        self.logger.info("=================================================================")
 
         # Log
-        self.result_log.append(
-            "train_reference_length", epoch, train_reference_length
-        )
-        self.result_log.append(
-            "train_predicted_length", epoch, train_predicted_length
-        )
+        self.result_log.append("train_reference_length", epoch, train_reference_length)
+        self.result_log.append("train_predicted_length", epoch, train_predicted_length)
         self.result_log.append("train_loss", epoch, train_loss)
 
-        elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(
-            epoch, self.trainer_params["epochs"]
-        )
+        elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(epoch, self.trainer_params["epochs"])
         self.logger.info(
             f"Epoch {epoch:3d}/{self.trainer_params['epochs']:3d}: "
             f"ref={train_reference_length:.4f}, pred={train_predicted_length:.4f}, "
@@ -251,8 +229,8 @@ class Stage1Trainer:
                 },
                 save_plots=epoch > 1,
             )
-    
-    def log_training_curve(self,epoch:int):
+
+    def log_training_curve(self, epoch: int):
         if epoch > 1:
             image_prefix = f"{self.result_folder}/latest"
             util_save_log_image_with_label(
@@ -266,10 +244,9 @@ class Stage1Trainer:
                 self.trainer_params["logging"]["log_image_params_2"],
                 self.result_log,
                 labels=["train_loss"],
-                )
+            )
 
-
-    def save_model_checkpoints_and_progress(self, epoch:int):
+    def save_model_checkpoints_and_progress(self, epoch: int):
         """
         Saves checkpoints in intervals as well as training progress at the checkpoints and when training is done.
         """
@@ -320,16 +297,13 @@ class Stage1Trainer:
                 )
                 self.tracker.finish()
 
-
     def continue_training_from_checkpoint(self):
         """
-        continues training from a checkpoint according to config. 
+        continues training from a checkpoint according to config.
         Loads params and model, optim etc. state
         """
         model_load = self.trainer_params["model_load"]
-        checkpoint_path = (
-            f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
-        )
+        checkpoint_path = f"{model_load['path']}/checkpoint-{model_load['epoch']}.pt"
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.start_epoch = 1 + model_load["epoch"]
