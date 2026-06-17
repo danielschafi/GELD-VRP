@@ -1,6 +1,5 @@
 """
 Combining what we can use from MVMoE's VRPPTWEnv.
-
 """
 
 from dataclasses import dataclass
@@ -9,75 +8,43 @@ import torch
 from geld_cvrptw.data.loaders import load_cvrptw_data_with_labels
 from geld_cvrptw.data.augmentations import apply_rotation, maybe_reverse_tour
 
-# Reminder this is used in geld rn
-# @dataclass
-# class StepResult:
-#     """Result of reset() or step() during autoregressive tour construction."""
-
-#     coordinates: torch.Tensor # static
-#     reference_length: torch.Tensor | float | None = None # dynamic
-#     predicted_length: torch.Tensor | float | None = None # dynamic
-#     done: bool = False #dynamic
-
 
 @dataclass
 class StaticState:
     """
     Static State information.
-    usually result of reset()
-    fixed one time
+    Fixed one time, does not change.
+    Global Encoder input
     """
-
-    depot_xy: torch.Tensor = None
-    # shape: (batch, 1, 2)
-    node_xy: torch.Tensor = None  # was coordinates
-    # shape: (batch, problem, 2)
-    node_demand: torch.Tensor = None
-    # shape: (batch, problem)
-    node_service_time: torch.Tensor = None
-    # shape: (batch, problem)
-    node_tw_start: torch.Tensor = None
-    # shape: (batch, problem)
-    node_tw_end: torch.Tensor = None
-    # shape: (batch, problem)
-    prob_emb: torch.Tensor = None
-    # shape: (num_training_prob)
-
+    depot_xy: torch.Tensor
+    node_xy: torch.Tensor 
+    node_demand: torch.Tensor
+    node_service_time: torch.Tensor 
+    node_tw_start: torch.Tensor
+    node_tw_end: torch.Tensor
+    label_tour: torch.Tensor | None = None   # SL only
 
 @dataclass
 class DynamicState:
     """
     Dynamic State information.
     Changes every step
-    usually result of step()
+    Local Decoder input
     """
 
-    # TODO: Verify if ALL attributes are needed.
-    BATCH_IDX: torch.Tensor = None
-    # POMO_IDX: torch.Tensor = None
-    START_NODE: torch.Tensor = None
-    # shape: (batch, pomo)
-    selected_count: int = None
-    current_node: torch.Tensor = None
-    # shape: (batch, pomo)
-    ninf_mask: torch.Tensor = None
-    # shape: (batch, pomo, problem+1)
-    done: torch.Tensor | bool = None  # was finished in MVMoE
-    # shape: (batch, pomo)
-    load: torch.Tensor = None
-    # shape: (batch, pomo)
-    current_time: torch.Tensor = None
-    # shape: (batch, pomo)
-    length: torch.Tensor = None
-    # shape: (batch, pomo)
-    open: torch.Tensor = None
-    # shape: (batch, pomo)
-    current_coord: torch.Tensor = None
-    # shape: (batch, pomo, 2)
+    selected_count: int # Number of construction steps completed (t).
+    current_node: torch.Tensor | None # shape: (batch,) — last visited node index; None before the first step.
+    current_coord: torch.Tensor # shape: (batch, 2) — coordinates of current_node.
+    
+    constructed_tour: torch.Tensor # shape: (batch, t) — teacher-forced prefix (decoder input).
+    model_tour: torch.Tensor # shape: (batch, t) — model's argmax prefix (SL quality tracking). Not necessarily valid tour
+    
+    ninf_mask: torch.Tensor # shape: (batch, problem+1) — -inf masks infeasible next nodes.
+    load: torch.Tensor # shape: (batch,) — remaining vehicle capacity.
+    current_time: torch.Tensor # shape: (batch,) — clock after serving current_node.
+    length: torch.Tensor # shape: (batch,) — distance traveled on the current route segment.
 
-    # need these for supervised learning training
-    reference_length: torch.Tensor | float | None = None
-    predicted_length: torch.Tensor | float | None = None
+    done: torch.Tensor # shape: (batch,) bool — episode finished for each instance.
 
 
 class CVRPTWEnv:
@@ -148,8 +115,8 @@ class CVRPTWEnv:
         self.current_coord = None
         # shape: (batch, pomo, 2)
 
-        self.static_state = StaticState()
-        self.dynamic_state = DynamicState()
+        self.static_state: StaticState | None = None
+        self.dynamic_state: DynamicState | None = None
 
         self.problems = None  # this is now more complex Static State attribs?
         self.batch_label_tours = None
@@ -281,11 +248,21 @@ class CVRPTWEnv:
         )
 
     def step(self) -> DynamicState:
-        # Init env internal dynamic state information
+        """Apply the selected action and return updated dynamic state."""
+        # TODO: implement transition + masking (see mvmoe_cvrptwenv.VRPTWEnv.step)
+        return DynamicState(
+            selected_count=self.selected_count,
+            current_node=self.current_node,
+            constructed_tour=self.constructed_tour,
+            model_tour=self.model_tour,
+            ninf_mask=self.ninf_mask,
+            load=self.load,
+            current_time=self.current_time,
+            length=self.length,
+            current_coord=self.current_coord,
+            done=self.done,
+        )
 
-        # Return what is needed outsied the env (for model prediction)
-
-        return DynamicState()
 
     # COMPUTE DEVICE MANAGEMENT
 

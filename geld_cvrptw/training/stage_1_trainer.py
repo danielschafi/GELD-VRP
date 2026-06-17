@@ -155,7 +155,7 @@ class Stage1Trainer:
             if current_step == 0:
                 # append last in cyclic (this is a node before return to depot)
                 teacher_node = self.env.batch_label_tours[:, -1]  # cyclic. last of tour
-                predicted_node = self.env.batch_label_tours[:-1]
+                predicted_node = self.env.batch_label_tours[:, -1]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             elif current_step == 1:
                 # append depot
