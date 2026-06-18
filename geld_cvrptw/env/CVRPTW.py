@@ -40,7 +40,7 @@ class DynamicState:
     model_tour: torch.Tensor # shape: (batch, t) — model's argmax prefix (SL quality tracking). Not necessarily valid tour
     
     ninf_mask: torch.Tensor # shape: (batch, problem+1) — -inf masks infeasible next nodes.
-    load: torch.Tensor # shape: (batch,) — remaining vehicle capacity.
+    remaining_capacity: torch.Tensor # shape: (batch,) — remaining vehicle capacity.
     current_time: torch.Tensor # shape: (batch,) — clock after serving current_node.
     length: torch.Tensor # shape: (batch,) — distance traveled on the current route segment.
 
@@ -92,7 +92,7 @@ class CVRPTWEnv:
         self.constructed_tour = None
         self.model_tour = None
         self.at_the_depot = None
-        self.load = None
+        self.remaining_capacity = None
         self.visited_ninf_flag = None
         self.ninf_mask = None
         self.current_time = None
@@ -143,44 +143,6 @@ class CVRPTWEnv:
 
         self.sync_batch_to_device()
 
-    def shuffle_data(self):
-        """Shuffle stored training instances."""
-        # TODO: Maybe just do it in the load raw data method? then user does not have to think about it in trainer loop
-        index = torch.randperm(len(self.full_node_coords)).long()
-
-        self.full_node_coords = self.full_node_coords[index]
-        self.full_node_demand = self.full_node_demand[index]
-        self.full_node_tw_start = self.full_node_tw_start[index]
-        self.full_node_tw_end = self.full_node_tw_end[index]
-        self.full_node_service_time = self.full_node_service_time[index]
-        self.full_label_tours = self.full_label_tours[index]
-        self.full_label_costs = self.full_label_costs[index]
-
-    def _build_dynamic_state(self) -> DynamicState:
-        return DynamicState(
-            num_completed_steps=self.num_completed_steps,
-            current_node_idx=self.current_node_idx,
-            current_node_coord=self.current_node_coord,
-            constructed_tour=self.constructed_tour,
-            model_tour=self.model_tour,
-            ninf_mask=self.ninf_mask,
-            load=self.load,
-            current_time=self.current_time,
-            length=self.length,
-            done=self.done,
-        )
-
-    def _build_static_state(self) -> StaticState:
-        return StaticState(
-            depot_coords=self.batch_coords[:, 0],
-            node_coords=self.batch_coords,
-            node_demand=self.batch_demand,
-            node_tw_start=self.batch_tw_start,
-            node_tw_end=self.batch_tw_end,
-            node_service_time=self.batch_service_time,
-            label_tour=self.batch_label_tours,
-        )
-
     def reset(self, batch_size=None) -> tuple[StaticState, DynamicState]:
         """Start a new episode; return static and initial dynamic state."""
         if batch_size is not None:
@@ -196,7 +158,7 @@ class CVRPTWEnv:
         self.current_node_coord = self.batch_coords[:, 0, :]
 
         self.at_the_depot = torch.ones(self.batch_size, dtype=torch.bool, device=self.device)
-        self.load = torch.ones(self.batch_size, device=self.device)
+        self.remaining_capacity = torch.ones(self.batch_size, device=self.device)
         self.visited_ninf_flag = torch.zeros(
             self.batch_size, self.problem_size + 1, device=self.device
         )
@@ -218,20 +180,87 @@ class CVRPTWEnv:
         Append selected nodes to tours and return updated dynamic state.
         Masking is already applied for next step decoding. 
         """
-        self.constructed_tour = torch.cat(
-            (self.constructed_tour, teacher_node_idx[:, None]), dim=1
-        )
-        self.model_tour = torch.cat(
-            (self.model_tour, predicted_node_idx[:, None]), dim=1
-        )
+
+        # Transitioning to new state
         self.num_completed_steps += 1
         self.current_node_idx = teacher_node_idx
         self.at_the_depot = teacher_node_idx == 0
-        batch_idx = torch.arange(self.batch_size, device=self.device)
-        self.current_node_coord = self.batch_coords[batch_idx, teacher_node_idx]
+
+        # None adds a size 1 dim, so that they are matching and can be concatenated.
+        self.constructed_tour = torch.cat((self.constructed_tour, self.current_node_idx[:, None]), dim=1)
+        self.model_tour = torch.cat((self.model_tour, predicted_node_idx[:, None]), dim=1)
+
+        # Tracking / Stats
+        added_length = self.update_tour_length()
+        self.update_remaining_capacity()
+        self.update_current_time(added_length)
+        # Update mask based on feasibility
+        self.apply_visited_constraint()
+        self.apply_capacity_constraint()
+        self.apply_time_window_constraint()
 
         self.dynamic_state = self._build_dynamic_state()
         return self.dynamic_state
+
+
+    def update_tour_length(self):
+        """Updates tour length. Adds the distance between previous and current node to the length"""
+        prev_node_coord = self.current_node_coord
+        sample_idx = torch.arange(self.batch_size, device=self.device)
+        self.current_node_coord = self.batch_coords[sample_idx, self.current_node_idx]
+        added_length = (self.current_node_coord - prev_node_coord).norm(p=2, dim=-1)
+        self.length += added_length
+        self.length[self.at_the_depot] = 0 # reset at depot
+        return added_length
+
+    def update_remaining_capacity(self):
+        """subtracts the serviced nodes demand from the vehicles remaining capacity"""
+        sample_idx = torch.arange(self.batch_size, device=self.device)
+        selected_demand = self.batch_demand[sample_idx, self.current_node_idx]
+        self.remaining_capacity -= selected_demand
+        self.remaining_capacity[self.at_the_depot] = 1  # Capacity refilled at the depot
+
+    def update_current_time(self, added_length):
+        """
+        Current time: end time of serving the current node / time where vehicle can move to next node
+        prev node ──travel (added_length/speed)──► arrive ──maybe wait──► service ──► current_time
+
+        Params:
+        - added_length: the distance that has been travelled from previous to current node
+        """
+        sample_idx = torch.arange(self.batch_size, device=self.device)
+        arrival_time = self.current_time + added_length / self.speed
+        earliest_possible_service_start = torch.max(arrival_time, self.batch_tw_start[sample_idx, self.current_node_idx])
+        self.current_time = earliest_possible_service_start + self.batch_service_time[sample_idx, self.current_node_idx]
+        self.current_time[self.at_the_depot] = 0   # clock resets at depot ("new vehicle" starts at t=0)
+
+
+    def apply_visited_constraint(self):
+        """Masks out the nodes already visited"""
+        # Incrementally masking out where we have been each step
+        sample_idx = torch.arange(self.batch_size, device=self.device)
+        self.visited_ninf_flag[sample_idx, self.current_node_idx] = float("-inf")
+        self.visited_ninf_flag[:, 0][~self.at_the_depot] = 0 # if not at depot allow visit depot    
+        self.ninf_mask = self.visited_ninf_flag.clone() # ninf mask is the one used by decoder. but we need to maintain visited mask
+
+    def apply_capacity_constraint(self):
+        """Mask out nodes that would exceet vehicle capacity"""
+        round_error_tol = 0.00001
+        demand_exceeds_capacity = self.remaining_capacity[:, None] + round_error_tol < self.batch_demand
+        self.ninf_mask[demand_exceeds_capacity] = float("-inf")
+
+    def apply_time_window_constraint(self):
+        """" 
+        time window constraint
+           current_time: the end time of serving the current node
+           a. max(current_time + travel_time, tw_start) or current_time + travel_time <= tw_end
+           b. vehicle should return to the depot: max(current_time + travel_time, tw_start) + service_time + dist(node, depot)/speed <= self.depot_end
+        """
+        pass
+
+
+
+
 
 
     # COMPUTE DEVICE MANAGEMENT
@@ -274,3 +303,42 @@ class CVRPTWEnv:
             self.batch_label_tours = self.batch_label_tours.to(self.device)
         if isinstance(self.batch_label_costs, torch.Tensor):
             self.batch_label_costs = self.batch_label_costs.to(self.device)
+
+
+    def shuffle_data(self):
+        """Shuffle stored training instances."""
+        # TODO: Maybe just do it in the load raw data method? then user does not have to think about it in trainer loop
+        index = torch.randperm(len(self.full_node_coords)).long()
+
+        self.full_node_coords = self.full_node_coords[index]
+        self.full_node_demand = self.full_node_demand[index]
+        self.full_node_tw_start = self.full_node_tw_start[index]
+        self.full_node_tw_end = self.full_node_tw_end[index]
+        self.full_node_service_time = self.full_node_service_time[index]
+        self.full_label_tours = self.full_label_tours[index]
+        self.full_label_costs = self.full_label_costs[index]
+
+    def _build_dynamic_state(self) -> DynamicState:
+        return DynamicState(
+            num_completed_steps=self.num_completed_steps,
+            current_node_idx=self.current_node_idx,
+            current_node_coord=self.current_node_coord,
+            constructed_tour=self.constructed_tour,
+            model_tour=self.model_tour,
+            ninf_mask=self.ninf_mask,
+            remaining_capacity=self.remaining_capacity,
+            current_time=self.current_time,
+            length=self.length,
+            done=self.done,
+        )
+
+    def _build_static_state(self) -> StaticState:
+        return StaticState(
+            depot_coords=self.batch_coords[:, 0],
+            node_coords=self.batch_coords,
+            node_demand=self.batch_demand,
+            node_tw_start=self.batch_tw_start,
+            node_tw_end=self.batch_tw_end,
+            node_service_time=self.batch_service_time,
+            label_tour=self.batch_label_tours,
+        )
