@@ -30,13 +30,6 @@ def build_distance_matrix(normalized_coordinates: torch.Tensor) -> torch.Tensor:
     return distance_matrix
 
 
-def map_coordinates_to_regions(coordinates: torch.Tensor, grid_size: int = 3) -> torch.Tensor:
-    """Assign each node to a region for RALA (m = grid_size²)."""
-    region_indices = torch.floor(coordinates * grid_size).long()
-    region_indices = torch.clamp(region_indices, min=0, max=grid_size - 1)
-    return region_indices[:, :, 0] * grid_size + region_indices[:, :, 1]
-
-
 def normalize_coordinates(data: torch.Tensor) -> torch.Tensor:
     """Min-max normalize node coordinates per TSP instance (Eq. 2)."""
     min_val, _ = torch.min(data, dim=1, keepdim=True)

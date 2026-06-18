@@ -56,7 +56,7 @@ class Stage1Trainer:
         # Initialize model, env, optim + scheduler and set hyperparams
         self.model = GeldCvrptwModel(**self.model_params).to(self.device)  # TODO: implemenmt
         self.env = CVRPTWEnv(**self.env_params)
-        self.env.set_device(self.device) 
+        self.env.set_device(self.device)
 
         self.optimizer = Adam(self.model.parameters(), **self.optimizer_params["optimizer"])
         self.scheduler = MultiStepLR(self.optimizer, **self.optimizer_params["scheduler"])
@@ -183,15 +183,14 @@ class Stage1Trainer:
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
             current_step += 1
 
-        reference_length = self.env.compute_tour_length(
-            self.env.batch_coords, static_state.label_tour
-        ).mean().item()
-        predicted_length = self.env.compute_tour_length(
-            self.env.batch_coords, dynamic_state.model_tour, tour_lengths=tour_lengths
-        ).mean().item()
+        reference_length = self.env.compute_tour_length(self.env.batch_coords, static_state.label_tour).mean().item()
+        predicted_length = (
+            self.env.compute_tour_length(self.env.batch_coords, dynamic_state.model_tour, tour_lengths=tour_lengths)
+            .mean()
+            .item()
+        )
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()
-
 
     def num_train_samples(self) -> int:
         """Full loaded dataset size, optionally capped by train_episodes for debugging."""

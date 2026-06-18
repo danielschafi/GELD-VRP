@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import torch
 from geld_cvrptw.data.loaders import load_cvrptw_data_with_labels, TOUR_PAD_VALUE
-from geld_cvrptw.data.augmentations import apply_rotation, maybe_reverse_tour
+from geld_cvrptw.data.augmentations import apply_rotation
 
 
 @dataclass
@@ -16,13 +16,15 @@ class StaticState:
     Fixed one time, does not change.
     Global Encoder input
     """
+
     depot_coords: torch.Tensor
-    node_coords: torch.Tensor 
+    node_coords: torch.Tensor
     node_demand: torch.Tensor
-    node_service_time: torch.Tensor 
+    node_service_time: torch.Tensor
     node_tw_start: torch.Tensor
     node_tw_end: torch.Tensor
-    label_tour: torch.Tensor | None = None   # SL only
+    label_tour: torch.Tensor | None = None  # SL only
+
 
 @dataclass
 class DynamicState:
@@ -32,19 +34,21 @@ class DynamicState:
     Local Decoder input
     """
 
-    num_completed_steps: int # Number of construction steps completed (t).
-    current_node_idx: torch.Tensor | None # shape: (batch,) — last visited node index; None before the first step.
-    current_node_coord: torch.Tensor # shape: (batch, 2) — coordinates of current_node.
-    
-    constructed_tour: torch.Tensor # shape: (batch, t) — teacher-forced prefix (decoder input).
-    model_tour: torch.Tensor # shape: (batch, t) — model's argmax prefix (SL quality tracking). Not necessarily valid tour
-    
-    ninf_mask: torch.Tensor # shape: (batch, num_nodes) — -inf masks infeasible next nodes.
-    remaining_capacity: torch.Tensor # shape: (batch,) — remaining vehicle capacity.
-    current_time: torch.Tensor # shape: (batch,) — clock after serving current_node.
-    length: torch.Tensor # shape: (batch,) — distance traveled on the current route segment.
+    num_completed_steps: int  # Number of construction steps completed (t).
+    current_node_idx: torch.Tensor | None  # shape: (batch,) — last visited node index; None before the first step.
+    current_node_coord: torch.Tensor  # shape: (batch, 2) — coordinates of current_node.
 
-    done: torch.Tensor # shape: (batch,) bool — episode finished for each instance.
+    constructed_tour: torch.Tensor  # shape: (batch, t) — teacher-forced prefix (decoder input).
+    model_tour: (
+        torch.Tensor
+    )  # shape: (batch, t) — model's argmax prefix (SL quality tracking). Not necessarily valid tour
+
+    ninf_mask: torch.Tensor  # shape: (batch, num_nodes) — -inf masks infeasible next nodes.
+    remaining_capacity: torch.Tensor  # shape: (batch,) — remaining vehicle capacity.
+    current_time: torch.Tensor  # shape: (batch,) — clock after serving current_node.
+    length: torch.Tensor  # shape: (batch,) — distance traveled on the current route segment.
+
+    done: torch.Tensor  # shape: (batch,) bool — episode finished for each instance.
 
 
 class CVRPTWEnv:
@@ -79,7 +83,7 @@ class CVRPTWEnv:
 
         # Episode constants
         self.speed = 1.0
-        self.depot_tw_start =  0.0
+        self.depot_tw_start = 0.0
         self.depot_tw_end = 3.0
 
         # Dynamic episode state — set by reset(), updated by step()
@@ -98,7 +102,6 @@ class CVRPTWEnv:
 
         self.static_state: StaticState | None = None
         self.dynamic_state: DynamicState | None = None
-
 
     def load_all_data(self):
         """
@@ -135,7 +138,7 @@ class CVRPTWEnv:
         self.num_nodes = self.batch_coords.shape[1]
 
         # Reversal does not work because of tw constraints
-        #self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
+        # self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
 
         if train:
             rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
@@ -159,9 +162,7 @@ class CVRPTWEnv:
 
         self.at_the_depot = torch.ones(self.batch_size, dtype=torch.bool, device=self.device)
         self.remaining_capacity = torch.ones(self.batch_size, device=self.device)
-        self.visited_ninf_flag = torch.zeros(
-            self.batch_size, self.num_nodes, device=self.device
-        )
+        self.visited_ninf_flag = torch.zeros(self.batch_size, self.num_nodes, device=self.device)
         self.ninf_mask = torch.zeros(self.batch_size, self.num_nodes, device=self.device)
         self.done = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
         self.current_time = torch.zeros(self.batch_size, device=self.device)
@@ -178,7 +179,7 @@ class CVRPTWEnv:
     ) -> DynamicState:
         """
         Append selected nodes to tours and return updated dynamic state.
-        Masking is already applied for next step decoding. 
+        Masking is already applied for next step decoding.
         """
 
         # Transitioning to new state
@@ -201,13 +202,12 @@ class CVRPTWEnv:
 
         # check which ones are finished / have visited all nodes.
         new_done = (self.visited_ninf_flag == float("-inf")).all(dim=-1)
-        self.done = self.done | new_done # depot feasibility switches multiple times, thats why not just + on top
-        
+        self.done = self.done | new_done  # depot feasibility switches multiple times, thats why not just + on top
+
         self.ninf_mask[:, 0][self.done] = 0
 
         self.dynamic_state = self._build_dynamic_state()
         return self.dynamic_state
-
 
     def update_tour_length(self):
         """Updates tour length. Adds the distance between previous and current node to the length"""
@@ -216,7 +216,7 @@ class CVRPTWEnv:
         self.current_node_coord = self.batch_coords[sample_idx, self.current_node_idx]
         added_length = (self.current_node_coord - prev_node_coord).norm(p=2, dim=-1)
         self.length += added_length
-        self.length[self.at_the_depot] = 0 # reset at depot
+        self.length[self.at_the_depot] = 0  # reset at depot
         return added_length
 
     def update_remaining_capacity(self):
@@ -236,17 +236,21 @@ class CVRPTWEnv:
         """
         sample_idx = torch.arange(self.batch_size, device=self.device)
         arrival_time = self.current_time + added_length / self.speed
-        earliest_possible_service_start = torch.max(arrival_time, self.batch_tw_start[sample_idx, self.current_node_idx])
+        earliest_possible_service_start = torch.max(
+            arrival_time, self.batch_tw_start[sample_idx, self.current_node_idx]
+        )
         self.current_time = earliest_possible_service_start + self.batch_service_time[sample_idx, self.current_node_idx]
-        self.current_time[self.at_the_depot] = 0   # clock resets at depot ("new vehicle" starts at t=0)
+        self.current_time[self.at_the_depot] = 0  # clock resets at depot ("new vehicle" starts at t=0)
 
     def apply_visited_constraint(self):
         """Masks out the nodes already visited"""
         # Incrementally masking out where we have been each step
         sample_idx = torch.arange(self.batch_size, device=self.device)
         self.visited_ninf_flag[sample_idx, self.current_node_idx] = float("-inf")
-        self.visited_ninf_flag[:, 0][~self.at_the_depot] = 0 # if not at depot allow visit depot    
-        self.ninf_mask = self.visited_ninf_flag.clone() # ninf mask is the one used by decoder. but we need to maintain visited mask
+        self.visited_ninf_flag[:, 0][~self.at_the_depot] = 0  # if not at depot allow visit depot
+        self.ninf_mask = (
+            self.visited_ninf_flag.clone()
+        )  # ninf mask is the one used by decoder. but we need to maintain visited mask
 
     def apply_capacity_constraint(self):
         """Mask out nodes that would exceet vehicle capacity"""
@@ -260,7 +264,7 @@ class CVRPTWEnv:
 
         # 1. Earliest possible service start time for all nodes max(tw start, currTime + travelTime)
         dist = (self.current_node_coord - self.batch_coords).norm(p=2, dim=-1)
-        travel_time =  dist / self.speed
+        travel_time = dist / self.speed
         earliest_possible_service_start = torch.max(self.current_time + travel_time, self.batch_tw_start)
 
         # 2. service starts after tw end -> infeasible
@@ -268,14 +272,12 @@ class CVRPTWEnv:
         self.ninf_mask[is_out_of_tw] = float("-inf")
 
         # 3. Return to depot would be after depot tw end -> infeasible
-        depot_coords = self.batch_coords[:,0:1,:]
+        depot_coords = self.batch_coords[:, 0:1, :]
         dist_next_node_to_depot = (depot_coords - self.batch_coords).norm(p=2, dim=-1)
         travel_time_to_depot = dist_next_node_to_depot / self.speed
         return_is_out_of_depot_tw = (
-            earliest_possible_service_start 
-            + self.batch_service_time 
-            + travel_time_to_depot 
-            > self.depot_tw_end + round_error_tol 
+            earliest_possible_service_start + self.batch_service_time + travel_time_to_depot
+            > self.depot_tw_end + round_error_tol
         )
         self.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
 
@@ -344,7 +346,6 @@ class CVRPTWEnv:
             self.batch_label_tours = self.batch_label_tours.to(self.device)
         if isinstance(self.batch_label_costs, torch.Tensor):
             self.batch_label_costs = self.batch_label_costs.to(self.device)
-
 
     def shuffle_full_data(self):
         """Shuffle stored training instances."""
