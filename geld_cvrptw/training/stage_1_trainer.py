@@ -20,6 +20,7 @@ from geld.utils.device import setup_device
 
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv
+from geld_cvrptw.data.loaders import TOUR_PAD_VALUE
 
 
 class Stage1Trainer:
@@ -72,7 +73,7 @@ class Stage1Trainer:
         """Run stage 1 supervised training"""
 
         # Load Train Data into memory.
-        self.env.load_raw_data(self.trainer_params["train_episodes"])
+        self.env.load_raw_data()
         self.env.set_device(self.device)
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
@@ -127,10 +128,10 @@ class Stage1Trainer:
 
     def _train_one_batch(self, batch_offset: int, batch_size: int):
         """
-        Train one batch supervised learning: cross entropy with teacher/grount_truth.
-        Each sample is used for problem_size steps.
-        At each step of the teacher tour we ask the model,
-        where it would go next and then compute cross entropy for the outputted probability distribution.
+        Train one batch supervised learning: cross entropy with teacher/ground truth.
+        Each sample is stepped through its full label tour (variable length, depot returns).
+        At each step of the teacher tour we ask the model where it would go next
+        and compute cross entropy for the outputted probability distribution.
         """
         self.model.train()
 
@@ -142,49 +143,47 @@ class Stage1Trainer:
         # we DONT use it to compute the joint probability of that tour under the model, only per step predictions.
         step_log_probs = torch.ones(size=(batch_size, 0), device=self.device)
 
-        # Reset env state (pred tour)
-        result = self.env.reset()
+        static_state, dynamic_state = self.env.reset()
+        self.model.prepare_instance(static_state)
 
-        # prepare data. Normalize, map nodes to RALA regions
-        self.model.prepare_instance(result.coordinates)
+        label_tour = static_state.label_tour
+        tour_lengths = (label_tour != TOUR_PAD_VALUE).sum(dim=1)
 
         current_step = 0
-        while not result.done:
-            # Decoder needs depot and current node (+knfeasible) to make prediction. Thats why first two steps fixed.
-            # Also kind of works for cvrptw since in our data its a continuous tour
+        while (current_step < tour_lengths).any():
+            active = current_step < tour_lengths
+
             if current_step == 0:
                 # append last in cyclic (this is a node before return to depot)
-                teacher_node = self.env.batch_label_tours[:, -1]  # cyclic. last of tour
-                predicted_node = self.env.batch_label_tours[:, -1]
+                batch_idx = torch.arange(batch_size, device=self.device)
+                last_idx = tour_lengths - 1
+                teacher_node = label_tour[batch_idx, last_idx]
+                predicted_node = teacher_node
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             elif current_step == 1:
                 # append depot
-                teacher_node = self.env.batch_label_tours[:, 0]  # cyclic. last of tour
-                predicted_node = self.env.batch_label_tours[:0]
+                teacher_node = label_tour[:, 0]
+                predicted_node = label_tour[:, 0]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             else:
                 # given t-1 labels from ground truths predict the t-th
-                output = self.model(self.env.constructed_tour, self.env.batch_label_tours, current_step)
-
-                teacher_node = output.teacher_action  # what the ground truth was
-                predicted_node = output.predicted_action  # what the models argmax pred is
+                output = self.model(static_state, dynamic_state, current_step)
+                teacher_node = torch.where(active, output.teacher_action, label_tour[:, 0])
+                predicted_node = torch.where(active, output.predicted_action, label_tour[:, 0])
                 step_prob = output.step_prob
-                loss_mean = -step_prob.type(torch.float64).log().mean()
+                loss_mean = -step_prob[active].type(torch.float64).log().mean()
                 self.model.zero_grad()
                 loss_mean.backward()
                 self.optimizer.step()
 
+            dynamic_state = self.env.step(teacher_node, predicted_node)
+            step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
             current_step += 1
 
-            # Append next ground truth and model pred nodes to constructed and model tours.
-            result = self.env.step(teacher_node, predicted_node)
-            step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
-
-        reference_length = self.env.compute_tour_length(self.env.problems, self.env.constructed_tour).mean().item()
-
+        reference_length = self.env.batch_label_costs.mean().item()
         # pred length for model is more like a proxy for quality.
-        # Possible that this is an invalid tour.
-        predicted_length = self.env.compute_tour_length(self.env.problems, self.env.model_tour).mean().item()
+        # Possible that this is an invalid tour
+        predicted_length = dynamic_state.length.mean().item()
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()
 

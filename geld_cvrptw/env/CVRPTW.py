@@ -39,7 +39,7 @@ class DynamicState:
     constructed_tour: torch.Tensor # shape: (batch, t) — teacher-forced prefix (decoder input).
     model_tour: torch.Tensor # shape: (batch, t) — model's argmax prefix (SL quality tracking). Not necessarily valid tour
     
-    ninf_mask: torch.Tensor # shape: (batch, problem+1) — -inf masks infeasible next nodes.
+    ninf_mask: torch.Tensor # shape: (batch, num_nodes) — -inf masks infeasible next nodes.
     remaining_capacity: torch.Tensor # shape: (batch,) — remaining vehicle capacity.
     current_time: torch.Tensor # shape: (batch,) — clock after serving current_node.
     length: torch.Tensor # shape: (batch,) — distance traveled on the current route segment.
@@ -49,7 +49,6 @@ class DynamicState:
 
 class CVRPTWEnv:
     def __init__(self, **env_params):
-        self.data_path = env_params.get("data_path")
         self.env_params = env_params
         self.device = (
             torch.device("cuda", torch.cuda.current_device())
@@ -69,7 +68,7 @@ class CVRPTWEnv:
         # Active batch — set by load_problems
         self.batch_offset = None
         self.batch_size = None
-        self.problem_size = None
+        self.num_nodes = None
         self.batch_coords = None
         self.batch_demand = None
         self.batch_tw_start = None
@@ -77,8 +76,6 @@ class CVRPTWEnv:
         self.batch_service_time = None
         self.batch_label_tours = None
         self.batch_label_costs = None
-
-        self.depot_node_xy = None
 
         # Episode constants
         self.speed = 1.0
@@ -118,9 +115,7 @@ class CVRPTWEnv:
         self.full_label_costs = dataset.costs.requires_grad_(False)
 
     def load_problems(self, batch_offset: int, batch_size: int, train: bool = True):
-        """¨
-        Load one batch of samples. could be combined with reset step for clarity. # TODO check after we do inference etc. if we can do that.
-        """
+        """Load one batch of samples."""
         self.batch_offset = batch_offset
         self.batch_size = batch_size
 
@@ -133,7 +128,7 @@ class CVRPTWEnv:
         self.batch_label_tours = self.full_label_tours[batch_offset : batch_offset + batch_size]
         self.batch_label_costs = self.full_label_costs[batch_offset : batch_offset + batch_size]
 
-        self.problem_size = self.batch_coords.shape[1]
+        self.num_nodes = self.batch_coords.shape[1]
 
         self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
 
@@ -160,9 +155,9 @@ class CVRPTWEnv:
         self.at_the_depot = torch.ones(self.batch_size, dtype=torch.bool, device=self.device)
         self.remaining_capacity = torch.ones(self.batch_size, device=self.device)
         self.visited_ninf_flag = torch.zeros(
-            self.batch_size, self.problem_size + 1, device=self.device
+            self.batch_size, self.num_nodes, device=self.device
         )
-        self.ninf_mask = torch.zeros(self.batch_size, self.problem_size + 1, device=self.device)
+        self.ninf_mask = torch.zeros(self.batch_size, self.num_nodes, device=self.device)
         self.done = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
         self.current_time = torch.zeros(self.batch_size, device=self.device)
         self.length = torch.zeros(self.batch_size, device=self.device)
@@ -280,10 +275,6 @@ class CVRPTWEnv:
         )
         self.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
 
-
-
-
-
     # COMPUTE DEVICE MANAGEMENT
 
     def set_device(self, device: torch.device):
@@ -328,7 +319,6 @@ class CVRPTWEnv:
 
     def shuffle_data(self):
         """Shuffle stored training instances."""
-        # TODO: Maybe just do it in the load raw data method? then user does not have to think about it in trainer loop
         index = torch.randperm(len(self.full_node_coords)).long()
 
         self.full_node_coords = self.full_node_coords[index]
