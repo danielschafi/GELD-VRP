@@ -28,29 +28,29 @@ class GeldCvrptwModel(nn.Module):
         self.model_params = model_params
         self.encoder = GlobalEncoder(**model_params)
         self.decoder = LocalDecoder(**model_params)
-        self.encoded_nodes = None
-        self.data = None
+        self.encoder_embeddings = None
+        self.normalized_coords = None
         self.dis_matrix = None
-        self.region = None
+        self.node_to_region_map = None
 
     def prepare_instance(self, static_state: StaticState) -> None:
-        """Normalize topology, build distance matrix, assign RALA regions, and encode once."""
+        """Normalize topology, build distance matrix, assign RALA regions, and encode once. Encoded features are reused. """
         node_coords = static_state.node_coords
-        self.data = normalize_coordinates(node_coords)
+        self.normalized_coords = normalize_coordinates(node_coords)
 
         if node_coords.size(1) > LARGE_INSTANCE_THRESHOLD:
-            self.decoder.data = self.data
-            self.dis_matrix = compute_distance_matrix(self.data, LARGE_INSTANCE_THRESHOLD)
+            self.decoder.data = self.normalized_coords
+            self.dis_matrix = compute_distance_matrix(self.normalized_coords, LARGE_INSTANCE_THRESHOLD)
         else:
-            self.dis_matrix = build_distance_matrix(self.data)
+            self.dis_matrix = build_distance_matrix(self.normalized_coords)
 
-        self.region = map_coordinates_to_regions(self.data)
-        self.encoded_nodes = self.encoder(self.data, self.region)
+        self.node_to_region_map = map_coordinates_to_regions(self.normalized_coords)
+        self.encoder_embeddings = self.encoder(static_state, self.normalized_coords, self.node_to_region_map)
 
     def forward(self, dynamic_state: DynamicState) -> torch.Tensor:
         """Return masked next-node probabilities, shape (batch, num_nodes)."""
         probs = self.decoder(
-            self.encoded_nodes,
+            self.encoder_embeddings,
             dynamic_state.constructed_tour,
             self.dis_matrix,
         )
