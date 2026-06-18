@@ -180,10 +180,12 @@ class Stage1Trainer:
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
             current_step += 1
 
-        reference_length = self.env.batch_label_costs.mean().item()
-        # pred length for model is more like a proxy for quality.
-        # Possible that this is an invalid tour
-        predicted_length = dynamic_state.length.mean().item()
+        reference_length = self.env.compute_tour_length(
+            self.env.batch_coords, static_state.label_tour
+        ).mean().item()
+        predicted_length = self.env.compute_tour_length(
+            self.env.batch_coords, dynamic_state.model_tour, tour_lengths=tour_lengths
+        ).mean().item()
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()
 

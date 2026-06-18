@@ -5,7 +5,7 @@ Combining what we can use from MVMoE's VRPPTWEnv.
 from dataclasses import dataclass
 
 import torch
-from geld_cvrptw.data.loaders import load_cvrptw_data_with_labels
+from geld_cvrptw.data.loaders import load_cvrptw_data_with_labels, TOUR_PAD_VALUE
 from geld_cvrptw.data.augmentations import apply_rotation, maybe_reverse_tour
 
 
@@ -274,6 +274,31 @@ class CVRPTWEnv:
             > self.depot_tw_end + round_error_tol 
         )
         self.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
+
+    def compute_tour_length(
+        self,
+        coords: torch.Tensor,
+        tour: torch.Tensor,
+        tour_lengths: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Total Euclidean distance along a node-index tour.
+        Sums consecutive leg lengths; ignores padded tail when tour_lengths is given.
+        """
+        batch_size = coords.size(0)
+        if tour_lengths is None:
+            tour_lengths = (tour != TOUR_PAD_VALUE).sum(dim=1)
+
+        batch_idx = torch.arange(batch_size, device=coords.device)
+        step_idx = torch.arange(tour.size(1), device=coords.device)
+        safe_tour = tour.clamp(min=0)
+
+        ordered = coords[batch_idx[:, None], safe_tour]
+        rolled = ordered.roll(shifts=-1, dims=1)
+        segment_lengths = (ordered - rolled).norm(p=2, dim=-1)
+
+        valid_segments = (step_idx[None, :] + 1) < tour_lengths[:, None]
+        return (segment_lengths * valid_segments).sum(dim=1)
 
     # COMPUTE DEVICE MANAGEMENT
 
