@@ -6,14 +6,14 @@ import torch
 LARGE_INSTANCE_THRESHOLD = 10000
 
 
-def build_distance_matrix(normalized_node_coords: torch.Tensor) -> torch.Tensor:
+def compute_distance_matrix(normalized_node_coords: torch.Tensor) -> torch.Tensor:
     """Full pairwise L2 distance matrix on normalized coordinates."""
     distance_matrix = torch.cdist(normalized_node_coords, normalized_node_coords, p=2)
     distance_matrix.diagonal(dim1=-2, dim2=-1).zero_()
     return distance_matrix
 
 
-def compute_distance_matrix(node_coords: torch.Tensor, block_size: int = 5000) -> torch.Tensor:
+def approximate_distance_matrix(node_coords: torch.Tensor, block_size: int = 5000) -> torch.Tensor:
     """Blocked pairwise L2 distance matrix for large-scale TSP instances."""
     _, num_nodes, _ = node_coords.size()
     device = node_coords.device

@@ -55,7 +55,7 @@ class Stage1Trainer:
         self.trainer_params = trainer_params
 
         # Initialize model, env, optim + scheduler and set hyperparams
-        self.model = GeldCvrptwModel(**self.model_params).to(self.device)  # TODO: implemenmt
+        self.model = GeldCvrptwModel(**self.model_params).to(self.device) 
         self.env = CVRPTWEnv(**self.env_params)
         self.env.set_device(self.device)
 
@@ -145,7 +145,7 @@ class Stage1Trainer:
         step_log_probs = torch.ones(size=(batch_size, 0), device=self.device)
 
         static_state, dynamic_state = self.env.reset()
-        self.model.prepare_instance(static_state)
+        self.model.embed_static_state_once(static_state)
 
         label_tour = static_state.label_tour
         tour_lengths = (label_tour != TOUR_PAD_VALUE).sum(dim=1)
