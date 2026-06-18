@@ -55,8 +55,8 @@ class Stage1Trainer:
 
         # Initialize model, env, optim + scheduler and set hyperparams
         self.model = GeldCvrptwModel(**self.model_params).to(self.device)  # TODO: implemenmt
-        self.env = CVRPTWEnv(**self.env_params)  # TODO: Implement
-        self.env.set_device(self.device)  # TODO: Implement
+        self.env = CVRPTWEnv(**self.env_params)
+        self.env.set_device(self.device) 
 
         self.optimizer = Adam(self.model.parameters(), **self.optimizer_params["optimizer"])
         self.scheduler = MultiStepLR(self.optimizer, **self.optimizer_params["scheduler"])
@@ -78,21 +78,20 @@ class Stage1Trainer:
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
             train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
-            self.scheduler.step()
-
             self.log_metrics(epoch, train_reference_length, train_predicted_length, train_loss)
             self.log_training_curve(epoch)
             self.save_model_checkpoints_and_progress(epoch)
 
     def _train_one_epoch(self, epoch: int):
         """One train pass over all training instances"""
+        self.env.shuffle_full_data()
+
         # Metrics Tracking over batches in epoch
         reference_length_meter = AverageMeter()
         predicted_length_meter = AverageMeter()
         loss_meter = AverageMeter()
 
-        # TODO: Cant / shouldnt we infer from data num_train_samples
-        num_total_samples = self.trainer_params["train_episodes"]
+        num_total_samples = self.num_train_samples()
         num_processed_samples = 0
         batch_log_interval = self.trainer_params["logging"].get("batch_log_interval", 50)
 
@@ -117,6 +116,9 @@ class Stage1Trainer:
                     f"Predicted length: {predicted_length_meter.avg:.4f}, "
                     f"Loss: {loss_meter.avg:.4f}"
                 )
+
+
+        self.scheduler.step()
 
         # Get averages over all batches
         avg_reference_length = reference_length_meter.avg
@@ -187,6 +189,15 @@ class Stage1Trainer:
         ).mean().item()
         loss_mean = -step_log_probs.log().mean()
         return reference_length, predicted_length, loss_mean.item()
+
+
+    def num_train_samples(self) -> int:
+        """Full loaded dataset size, optionally capped by train_episodes for debugging."""
+        cap = self.trainer_params.get("train_episodes")
+        dataset_size = self.env.num_samples()
+        if cap is None:
+            return dataset_size
+        return min(dataset_size, cap)
 
     def log_metrics(
         self,

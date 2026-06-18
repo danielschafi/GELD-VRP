@@ -114,7 +114,9 @@ class CVRPTWEnv:
         self.full_label_tours = dataset.label_tours.requires_grad_(False)
         self.full_label_costs = dataset.costs.requires_grad_(False)
 
-        self.shuffle_full_data()
+    def num_samples(self) -> int:
+        """Number of loaded training instances."""
+        return len(self.full_node_coords)
 
     def load_one_batch_of_problems(self, batch_offset: int, batch_size: int, train: bool = True):
         """Load one batch of samples."""
@@ -201,7 +203,6 @@ class CVRPTWEnv:
         new_done = (self.visited_ninf_flag == float("-inf")).all(dim=-1)
         self.done = self.done | new_done # depot feasibility switches multiple times, thats why not just + on top
         
-        # always allow depot choice if done, so there is a legal move for decoder TODO: Check if needed
         self.ninf_mask[:, 0][self.done] = 0
 
         self.dynamic_state = self._build_dynamic_state()
