@@ -117,7 +117,6 @@ class Stage1Trainer:
                     f"Loss: {loss_meter.avg:.4f}"
                 )
 
-
         self.scheduler.step()
 
         # Get averages over all batches
@@ -172,6 +171,9 @@ class Stage1Trainer:
                 teacher_node = torch.where(active, output.teacher_action, label_tour[:, 0])
                 predicted_node = torch.where(active, output.predicted_action, label_tour[:, 0])
                 step_prob = output.step_prob
+
+                # Negative Log Likelihood
+                # Step probability is the probability that the model has assigned to the teacher tour's next node.
                 loss_mean = -step_prob[active].type(torch.float64).log().mean()
                 self.model.zero_grad()
                 loss_mean.backward()
