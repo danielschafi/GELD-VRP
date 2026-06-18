@@ -199,6 +199,13 @@ class CVRPTWEnv:
         self.apply_capacity_constraint()
         self.apply_time_window_constraint()
 
+        # check which ones are finished / have visited all nodes.
+        new_done = (self.visited_ninf_flag == float("-inf")).all(dim=-1)
+        self.done = self.done | new_done # depot feasibility switches multiple times, thats why not just + on top
+        
+        # always allow depot choice if done, so there is a legal move for decoder TODO: Check if needed
+        self.ninf_mask[:, 0][self.done] = 0
+
         self.dynamic_state = self._build_dynamic_state()
         return self.dynamic_state
 
