@@ -21,6 +21,7 @@ from geld.utils.device import setup_device
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv
 from geld_cvrptw.data.loaders import TOUR_PAD_VALUE
+from geld_cvrptw.model.helpers import teacher_action_prob
 
 
 class Stage1Trainer:
@@ -166,14 +167,14 @@ class Stage1Trainer:
                 predicted_node = label_tour[:, 0]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             else:
-                # given t-1 labels from ground truths predict the t-th
-                output = self.model(static_state, dynamic_state, current_step)
-                teacher_node = torch.where(active, output.teacher_action, label_tour[:, 0])
-                predicted_node = torch.where(active, output.predicted_action, label_tour[:, 0])
-                step_prob = output.step_prob
+                probs = self.model(dynamic_state)
+                teacher_node = label_tour[:, current_step - 1]
+                predicted_node = probs.argmax(dim=1)
+                step_prob = teacher_action_prob(probs, teacher_node).unsqueeze(1)
+                teacher_node = torch.where(active, teacher_node, label_tour[:, 0])
+                predicted_node = torch.where(active, predicted_node, label_tour[:, 0])
 
-                # Negative Log Likelihood
-                # Step probability is the probability that the model has assigned to the teacher tour's next node.
+                # Negative log-likelihood of the label action under the model distribution.
                 loss_mean = -step_prob[active].type(torch.float64).log().mean()
                 self.model.zero_grad()
                 loss_mean.backward()

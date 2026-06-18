@@ -55,3 +55,17 @@ def tour_length(normalized_node_coords: torch.Tensor, tour: torch.Tensor) -> tor
     rolled = ordered.roll(dims=1, shifts=-1)
     segment_lengths = ((ordered - rolled) ** 2).sum(2).sqrt()
     return segment_lengths.sum(1)
+
+
+def apply_feasibility_mask(probs: torch.Tensor, ninf_mask: torch.Tensor) -> torch.Tensor:
+    """Zero infeasible actions and renormalize."""
+    masked_probs = probs.clone()
+    infeasible = ninf_mask == float("-inf")
+    masked_probs[infeasible] = 0.0
+    return masked_probs / masked_probs.sum(dim=-1, keepdim=True).clamp(min=1e-10)
+
+
+def teacher_action_prob(probs: torch.Tensor, teacher_action: torch.Tensor) -> torch.Tensor:
+    """Probability assigned to the teacher label at this step, shape (batch,)."""
+    batch_idx = torch.arange(probs.size(0), device=probs.device)
+    return probs[batch_idx, teacher_action]
