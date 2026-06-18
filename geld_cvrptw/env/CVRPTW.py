@@ -234,7 +234,6 @@ class CVRPTWEnv:
         self.current_time = earliest_possible_service_start + self.batch_service_time[sample_idx, self.current_node_idx]
         self.current_time[self.at_the_depot] = 0   # clock resets at depot ("new vehicle" starts at t=0)
 
-
     def apply_visited_constraint(self):
         """Masks out the nodes already visited"""
         # Incrementally masking out where we have been each step
@@ -250,14 +249,29 @@ class CVRPTWEnv:
         self.ninf_mask[demand_exceeds_capacity] = float("-inf")
 
     def apply_time_window_constraint(self):
-        """" 
-        time window constraint
-           current_time: the end time of serving the current node
-           a. max(current_time + travel_time, tw_start) or current_time + travel_time <= tw_end
-           b. vehicle should return to the depot: max(current_time + travel_time, tw_start) + service_time + dist(node, depot)/speed <= self.depot_end
-        """
-        pass
+        """Mask out where we cant complete service within the time window"""
+        round_error_tol = 0.00001
 
+        # 1. Earliest possible service start time for all nodes max(tw start, currTime + travelTime)
+        dist = (self.current_node_coord - self.batch_coords).norm(p=2, dim=-1)
+        travel_time =  dist / self.speed
+        earliest_possible_service_start = torch.max(self.current_time + travel_time, self.batch_tw_start)
+
+        # 2. service starts after tw end -> infeasible
+        is_out_of_tw = earliest_possible_service_start > self.batch_tw_end + round_error_tol
+        self.ninf_mask[is_out_of_tw] = float("-inf")
+
+        # 3. Return to depot would be after depot tw end -> infeasible
+        depot_coords = self.batch_coords[:,0:1,:]
+        dist_next_node_to_depot = (depot_coords - self.batch_coords).norm(p=2, dim=-1)
+        travel_time_to_depot = dist_next_node_to_depot / self.speed
+        return_is_out_of_depot_tw = (
+            earliest_possible_service_start 
+            + self.batch_service_time 
+            + travel_time_to_depot 
+            > self.depot_tw_end + round_error_tol 
+        )
+        self.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
 
 
 
