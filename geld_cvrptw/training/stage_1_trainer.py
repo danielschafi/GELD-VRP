@@ -73,11 +73,10 @@ class Stage1Trainer:
         """Run stage 1 supervised training"""
 
         # Load Train Data into memory.
-        self.env.load_raw_data()
+        self.env.load_all_data()
         self.env.set_device(self.device)
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
-            self.env.shuffle_data()
             train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
             self.scheduler.step()
 
@@ -136,7 +135,7 @@ class Stage1Trainer:
         self.model.train()
 
         # Load one batch of samples
-        self.env.load_problems(batch_offset, batch_size, train=True)
+        self.env.load_one_batch_of_problems(batch_offset, batch_size, train=True)
 
         # step 1 is fixed, for tracking the models preds
         # We just track them for each step that we let it predict

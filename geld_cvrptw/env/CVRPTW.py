@@ -100,7 +100,7 @@ class CVRPTWEnv:
         self.dynamic_state: DynamicState | None = None
 
 
-    def load_raw_data(self):
+    def load_all_data(self):
         """
         Currently only loads the train dataset for stage 1 supervised learning training
         """
@@ -114,7 +114,9 @@ class CVRPTWEnv:
         self.full_label_tours = dataset.label_tours.requires_grad_(False)
         self.full_label_costs = dataset.costs.requires_grad_(False)
 
-    def load_problems(self, batch_offset: int, batch_size: int, train: bool = True):
+        self.shuffle_full_data()
+
+    def load_one_batch_of_problems(self, batch_offset: int, batch_size: int, train: bool = True):
         """Load one batch of samples."""
         self.batch_offset = batch_offset
         self.batch_size = batch_size
@@ -130,7 +132,8 @@ class CVRPTWEnv:
 
         self.num_nodes = self.batch_coords.shape[1]
 
-        self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
+        # Reversal does not work because of tw constraints
+        #self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
 
         if train:
             rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
@@ -342,7 +345,7 @@ class CVRPTWEnv:
             self.batch_label_costs = self.batch_label_costs.to(self.device)
 
 
-    def shuffle_data(self):
+    def shuffle_full_data(self):
         """Shuffle stored training instances."""
         index = torch.randperm(len(self.full_node_coords)).long()
 
