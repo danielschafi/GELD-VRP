@@ -2,7 +2,6 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from geld_cvrptw.env.CVRPTW import DynamicState
 from geld_cvrptw.model.helpers import LARGE_INSTANCE_THRESHOLD
@@ -32,12 +31,10 @@ class LocalDecoder(nn.Module):
         dis_matrix: torch.Tensor,
     ) -> torch.Tensor:
         """Predicts the next nodes from the candidate set."""
-        batch_size =  encoded_nodes.shape[0]
-        problem_size = encoded_nodes.shape[1]
+        encoded_nodes.shape[0]
+        encoded_nodes.shape[1]
 
         self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
-
-
 
     def build_candidate_set(
         self,
@@ -73,7 +70,13 @@ class LocalDecoder(nn.Module):
             local_candidates_indexes.unsqueeze(-1).expand(-1, -1, self.embedding_dim),
         )
 
-        return depot_node_embedding, current_node_embedding, local_candidates_embedding, local_candidates_indexes, current_node_idx
+        return (
+            depot_node_embedding,
+            current_node_embedding,
+            local_candidates_embedding,
+            local_candidates_indexes,
+            current_node_idx,
+        )
 
     def _local_distance_matrix(
         self,

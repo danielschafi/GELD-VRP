@@ -55,7 +55,7 @@ class Stage1Trainer:
         self.trainer_params = trainer_params
 
         # Initialize model, env, optim + scheduler and set hyperparams
-        self.model = GeldCvrptwModel(**self.model_params).to(self.device) 
+        self.model = GeldCvrptwModel(**self.model_params).to(self.device)
         self.env = CVRPTWEnv(**self.env_params)
         self.env.set_device(self.device)
 

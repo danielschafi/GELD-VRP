@@ -34,7 +34,7 @@ class GeldCvrptwModel(nn.Module):
         self.node_to_region_map = None
 
     def embed_static_state_once(self, static_state: StaticState) -> None:
-        """Normalize topology, build distance matrix, assign RALA regions, and encode once. Encoded features are reused. """
+        """Normalize topology, build distance matrix, assign RALA regions, and encode once. Encoded features are reused."""
         node_coords = static_state.node_coords
         self.normalized_coords = normalize_coordinates(node_coords)
 

@@ -264,9 +264,7 @@ class CurriculumTrainer:
                 self.env.load_problems_val(episode, batch_size, rotation_id)
                 origin_problem = self.env.problems
                 batch_tours_slice = current_tours[episode : episode + batch_size]
-                torch.arange(0, problem_size, step=problem_size // num_segments, dtype=torch.long)[
-                    :num_segments
-                ]
+                torch.arange(0, problem_size, step=problem_size // num_segments, dtype=torch.long)[:num_segments]
                 repaired = apply_prc_iteration(
                     self.model,
                     self.env,
