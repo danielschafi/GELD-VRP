@@ -91,3 +91,33 @@ class RegionAverageLinearAttention(nn.Module):
         out = torch.matmul(attention1, out)
         out_transposed = out.transpose(1, 2)
         return out_transposed.reshape(x.shape)
+
+
+class AttentionFusionModule(nn.Module):
+    """AFM: distance-weighted attention over local decoder inputs."""
+
+    def __init__(self, model_params):
+        super().__init__()
+        self.model_params = model_params
+        embedding_dim = model_params["embedding_dim"]
+        self.Wq = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.Wk = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.Wv = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.alpha = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, x, dis_matrix):
+        """Fuse node features using the normalized distance matrix."""
+        head_num = self.model_params["head_num"]
+        q = reshape_by_heads(self.Wq(x), head_num=head_num)
+        k = reshape_by_heads(self.Wk(x), head_num=head_num)
+        v = reshape_by_heads(self.Wv(x), head_num=head_num)
+
+        dis_weight = torch.exp(-self.alpha * np.log2(dis_matrix.size(1)) * dis_matrix)
+        k_weight = torch.exp(k)
+        weight_1 = torch.einsum("bij, bhik->bhjk", dis_weight, torch.mul(k_weight, v))
+        weight_2 = torch.einsum("bij, bhik->bhjk", dis_weight, k_weight)
+        weight_3 = torch.div(weight_1, weight_2)
+        q_weight = torch.sigmoid(q)
+        out = torch.mul(q_weight, weight_3)
+        out_transposed = out.transpose(1, 2)
+        return out_transposed.reshape(x.shape)

@@ -11,7 +11,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 
-from geld_cvrptw.utils.logging import util_save_log_image_with_label
 from geld_cvrptw.utils.metrics import LogData
 
 logger = logging.getLogger(__name__)
@@ -85,8 +84,8 @@ def save_metrics_json(
         json.dump(payload, json_file, indent=2)
 
 
-def save_training_plots(result_folder: Path, result_log: LogData, logging_config: dict | None = None) -> None:
-    """Save matplotlib PNG curves and legacy JPG plots when configured."""
+def save_training_plots(result_folder: Path, result_log: LogData) -> None:
+    """Save matplotlib PNG training curves."""
     records = result_log.to_epoch_records()
     if not records:
         return
@@ -130,23 +129,6 @@ def save_training_plots(result_folder: Path, result_log: LogData, logging_config
         fig.tight_layout()
         fig.savefig(plots_dir / "tour_lengths.png", dpi=150)
         plt.close(fig)
-
-    if logging_config:
-        image_prefix = str(result_folder / "latest")
-        if "log_image_params_1" in logging_config:
-            util_save_log_image_with_label(
-                image_prefix,
-                logging_config["log_image_params_1"],
-                result_log,
-                labels=["train_reference_length"],
-            )
-        if "log_image_params_2" in logging_config:
-            util_save_log_image_with_label(
-                image_prefix,
-                logging_config["log_image_params_2"],
-                result_log,
-                labels=["train_loss"],
-            )
 
 
 def save_eval_instances_csv(instances: list[EvalInstanceResult], path: Path) -> None:
@@ -233,7 +215,6 @@ class ExperimentTracker:
     def save_training_progress(
         self,
         result_log: LogData,
-        logging_config: dict | None = None,
         metadata: dict[str, Any] | None = None,
         save_plots: bool = True,
     ) -> None:
@@ -241,7 +222,7 @@ class ExperimentTracker:
         save_metrics_csv(result_log, self.result_folder / METRICS_CSV)
         save_metrics_json(result_log, self.result_folder / METRICS_JSON, metadata=metadata)
         if save_plots:
-            save_training_plots(self.result_folder, result_log, logging_config)
+            save_training_plots(self.result_folder, result_log)
 
     def save_eval_results(self, summary: EvalSummary) -> None:
         """Persist evaluation CSV/JSON artifacts."""

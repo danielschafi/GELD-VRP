@@ -51,16 +51,7 @@ def default_training_stage_1_params(use_cuda: bool = True, cuda_device_num: int 
         "train_batch_size": 1024,
         "logging": {
             "model_save_interval": 1,
-            "img_save_interval": 3000,
             "batch_log_interval": 50,
-            "log_image_params_1": {
-                "json_foldername": "log_image_style",
-                "filename": "style_tsp_100.json",
-            },
-            "log_image_params_2": {
-                "json_foldername": "log_image_style",
-                "filename": "style_loss_1.json",
-            },
         },
         "model_load": {
             "enable": False,

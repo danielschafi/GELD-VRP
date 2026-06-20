@@ -38,11 +38,18 @@ class LocalDecoder(nn.Module):
         device = encoded_nodes.device
 
         candidate_set, local_candidates_indexes = self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
-        norm_local_distance_matrix = self.build_local_distance_matrix(dis_matrix, dynamic_state)
+        k = local_candidates_indexes.size(1)
+        norm_local_distance_matrix = self.local_distance_matrix(
+            dis_matrix,
+            local_candidates_indexes,
+            dynamic_state.current_node_idx,
+            normalized_coords,
+            problem_size,
+        )
         for layer in self.decoder_layers:
             candidate_set = layer(candidate_set, norm_local_distance_matrix)
 
-        logits = self.final_projection(candidate_set).squeeze(-1)[:, 1:-1]  # dont need depot + current node
+        logits = self.final_projection(candidate_set).squeeze(-1)[:, 1 : 1 + k]
         probs = F.softmax(logits, dim=-1)
 
         full_probs = torch.full((batch_size, problem_size), 1e-5, device=device, dtype=probs.dtype)
@@ -61,10 +68,7 @@ class LocalDecoder(nn.Module):
         problem_size = encoded_nodes.shape[1]
         device = encoded_nodes.device
         sample_idx = torch.arange(batch_size, device=device)
-
         current_node_idx = dynamic_state.current_node_idx
-        if current_node_idx is None:
-            current_node_idx = torch.zeros(batch_size, dtype=torch.long, device=device)
 
         # First and last node embeddings, for local decoding update their static embeddings
         depot_node_embedding = self.depot_node_embedding(encoded_nodes[sample_idx, 0])
@@ -88,35 +92,54 @@ class LocalDecoder(nn.Module):
 
         candidate_set = torch.cat(
             [
-                depot_node_embedding.unsqueeze(-1),
+                depot_node_embedding.unsqueeze(1),
                 local_candidates_embedding,
-                current_node_embedding.unsqueeze(-1),
-                context_embedding,
+                current_node_embedding.unsqueeze(1),
+                context_embedding.unsqueeze(1),
             ],
-            dim=-1,
+            dim=1,
         )
         return candidate_set, local_candidates_indexes
 
     def local_distance_matrix(
         self,
-        candidate_node_indices: torch.Tensor,
         dis_matrix: torch.Tensor,
+        candidate_node_indices: torch.Tensor,
+        current_node_idx: torch.Tensor,
         normalized_coords: torch.Tensor,
         problem_size: int,
     ) -> torch.Tensor:
-        """Build / Extract the normalized distance matrix for the candidate set nodes."""
+        """Build normalized distances for [depot, k candidates, current, context]."""
         batch_size = candidate_node_indices.size(0)
-        sample_idx = torch.arange(batch_size, dtype=torch.long, device=dis_matrix.device)
+        device = dis_matrix.device
+        sample_idx = torch.arange(batch_size, dtype=torch.long, device=device)
+
+        # indices for which we later need to get the distances for [depot, candidates, current]
+        sequence_indices = torch.cat(
+            [
+                torch.zeros(batch_size, 1, dtype=torch.long, device=device),
+                candidate_node_indices,
+                current_node_idx.unsqueeze(1),
+            ],
+            dim=1,
+        )
+        seq_len = sequence_indices.size(1)
 
         if problem_size > LARGE_INSTANCE_THRESHOLD:
-            candidate_indices = candidate_node_indices.unsqueeze(2).expand(batch_size, -1, 2)
-            coords = normalized_coords.gather(dim=1, index=candidate_indices)
+            coord_indices = sequence_indices.unsqueeze(2).expand(-1, -1, 2)
+            coords = normalized_coords.gather(dim=1, index=coord_indices)
             local_dist = torch.cdist(coords, coords, p=2)
             local_dist.diagonal(dim1=-2, dim2=-1).zero_()
-            return local_dist
+        else:
+            index_un = sequence_indices.unsqueeze(1)
+            local_dist = dis_matrix[sample_idx.unsqueeze(1).unsqueeze(2), index_un, index_un.transpose(1, 2)]
 
-        candidate_indices = candidate_node_indices.unsqueeze(1)
-        return dis_matrix[sample_idx.unsqueeze(1), candidate_indices, candidate_indices.transpose(1, 2)]
+        # Context token has no coordinates; pad with zeros for AFM.
+        # For AttentionFusionModule expect x and dis_matrix to be of same size. add a zero column and row to local_dist matrix
+        zeros_row = torch.zeros(batch_size, 1, seq_len, device=device, dtype=local_dist.dtype)
+        local_dist = torch.cat([local_dist, zeros_row], dim=1)
+        zeros_col = torch.zeros(batch_size, seq_len + 1, 1, device=device, dtype=local_dist.dtype)
+        return torch.cat([local_dist, zeros_col], dim=2)
 
     def build_context_vector(self, dynamic_state: DynamicState, dis_matrix: torch.Tensor) -> torch.Tensor:
         """Returns the dynamic state vector"""

@@ -1,14 +1,11 @@
 """Experiment logging and result directory management."""
 
-import json
 import logging
 import logging.config
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import pytz
 
 from geld_cvrptw.config.paths import project_root
@@ -67,50 +64,3 @@ def util_print_log_array(logger, result_log: LogData):
     """Log all metric series from training/eval history."""
     for key in result_log.get_keys():
         logger.info(f"{key}_list = {result_log.get(key)}")
-
-
-def util_save_log_image_with_label(result_file_prefix, img_params, result_log: LogData, labels=None):
-    """Save a training curve plot as JPG."""
-    dirname = os.path.dirname(result_file_prefix)
-    os.makedirs(dirname, exist_ok=True)
-    _build_log_image_plt(img_params, result_log, labels)
-    if labels is None:
-        labels = result_log.get_keys()
-    file_name = "_".join(labels)
-    fig = plt.gcf()
-    fig.savefig(f"{result_file_prefix}-{file_name}.jpg")
-    plt.close(fig)
-
-
-def _build_log_image_plt(img_params, result_log: LogData, labels=None):
-    """Build matplotlib figure from JSON style config and log data."""
-    style_dir = Path(__file__).resolve().parent / "log_image_style"
-    config_path = style_dir / img_params["filename"]
-    with open(config_path, "r", encoding="utf-8") as config_file:
-        config = json.load(config_file)
-
-    figsize = (config["figsize"]["x"], config["figsize"]["y"])
-    plt.figure(figsize=figsize)
-    if labels is None:
-        labels = result_log.get_keys()
-    for label in labels:
-        plt.plot(*result_log.getXY(label), label=label)
-
-    ylim_min = config["ylim"]["min"]
-    ylim_max = config["ylim"]["max"]
-    if ylim_min is None:
-        ylim_min = plt.gca().dataLim.ymin
-    if ylim_max is None:
-        ylim_max = plt.gca().dataLim.ymax
-    plt.ylim(ylim_min, ylim_max)
-
-    xlim_min = config["xlim"]["min"]
-    xlim_max = config["xlim"]["max"]
-    if xlim_min is None:
-        xlim_min = plt.gca().dataLim.xmin
-    if xlim_max is None:
-        xlim_max = plt.gca().dataLim.xmax
-    plt.xlim(xlim_min, xlim_max)
-    plt.rc("legend", **{"fontsize": 18})
-    plt.legend()
-    plt.grid(config["grid"])

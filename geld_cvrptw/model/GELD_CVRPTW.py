@@ -28,13 +28,15 @@ class GeldCvrptwModel(nn.Module):
         self.model_params = model_params
         self.encoder = GlobalEncoder(**model_params)
         self.decoder = LocalDecoder(**model_params)
+        self.static_state: StaticState | None = None
         self.encoded_nodes = None
         self.normalized_coords = None
         self.dis_matrix = None
         self.node_to_region_map = None
 
     def embed_static_state_once(self, static_state: StaticState) -> None:
-        """Normalize topology, build distance matrix, assign RALA regions, and encode once. Encoded features are reused."""
+        """Normalize topology, build distance matrix, and assign RALA regions for one instance."""
+        self.static_state = static_state
         node_coords = static_state.node_coords
         self.normalized_coords = normalize_coordinates(node_coords)
 
@@ -44,15 +46,26 @@ class GeldCvrptwModel(nn.Module):
             self.dis_matrix = compute_distance_matrix(self.normalized_coords)
 
         self.node_to_region_map = map_nodes_to_regions(self.normalized_coords)
-        self.encoded_nodes = self.encoder(static_state, self.normalized_coords, self.node_to_region_map)
+        self.encoded_nodes = None
+        if not self.training:
+            self.encoded_nodes = self.encoder(static_state, self.normalized_coords, self.node_to_region_map)
 
     def forward(self, dynamic_state: DynamicState) -> torch.Tensor:
         """Return masked next-node probabilities, shape (batch, num_nodes)."""
-        if self.encoded_nodes is None:
+        if self.static_state is None or self.normalized_coords is None or self.dis_matrix is None:
             raise RuntimeError("Call embed_static_state_once before forward.")
 
+        if self.training:
+            encoded_nodes = self.encoder(self.static_state, self.normalized_coords, self.node_to_region_map)
+        else:
+            if self.encoded_nodes is None:
+                self.encoded_nodes = self.encoder(
+                    self.static_state, self.normalized_coords, self.node_to_region_map
+                )
+            encoded_nodes = self.encoded_nodes
+
         probs = self.decoder(
-            self.encoded_nodes,
+            encoded_nodes,
             dynamic_state,
             self.normalized_coords,
             self.dis_matrix,

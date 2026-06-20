@@ -109,13 +109,13 @@ class CVRPTWEnv:
         """
         dataset = load_cvrptw_data_with_labels()
 
-        self.full_node_coords = dataset.coords.requires_grad_(False)
-        self.full_node_demand = dataset.demand.requires_grad_(False)
-        self.full_node_tw_start = dataset.tw_start.requires_grad_(False)
-        self.full_node_tw_end = dataset.tw_end.requires_grad_(False)
-        self.full_node_service_time = dataset.service_time.requires_grad_(False)
-        self.full_label_tours = dataset.label_tours.requires_grad_(False)
-        self.full_label_costs = dataset.costs.requires_grad_(False)
+        self.full_node_coords = dataset["coords"].requires_grad_(False)
+        self.full_node_demand = dataset["demand"].requires_grad_(False)
+        self.full_node_tw_start = dataset["tw_start"].requires_grad_(False)
+        self.full_node_tw_end = dataset["tw_end"].requires_grad_(False)
+        self.full_node_service_time = dataset["service_time"].requires_grad_(False)
+        self.full_label_tours = dataset["label_tours"].requires_grad_(False)
+        self.full_label_costs = dataset["costs"].requires_grad_(False)
 
     def num_samples(self) -> int:
         """Number of loaded training instances."""
@@ -263,9 +263,9 @@ class CVRPTWEnv:
         round_error_tol = 0.00001
 
         # 1. Earliest possible service start time for all nodes max(tw start, currTime + travelTime)
-        dist = (self.current_node_coord - self.batch_coords).norm(p=2, dim=-1)
+        dist = (self.current_node_coord.unsqueeze(1) - self.batch_coords).norm(p=2, dim=-1)
         travel_time = dist / self.speed
-        earliest_possible_service_start = torch.max(self.current_time + travel_time, self.batch_tw_start)
+        earliest_possible_service_start = torch.max(self.current_time.unsqueeze(1) + travel_time, self.batch_tw_start)
 
         # 2. service starts after tw end -> infeasible
         is_out_of_tw = earliest_possible_service_start > self.batch_tw_end + round_error_tol

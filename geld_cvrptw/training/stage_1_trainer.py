@@ -13,7 +13,6 @@ from geld_cvrptw.utils.metrics import AverageMeter, LogData, TimeEstimator
 from geld_cvrptw.utils.logging import (
     get_result_folder,
     util_print_log_array,
-    util_save_log_image_with_label,
 )
 from geld_cvrptw.utils.device import setup_device
 
@@ -80,7 +79,6 @@ class Stage1Trainer:
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
             train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
             self.log_metrics(epoch, train_reference_length, train_predicted_length, train_loss)
-            self.log_training_curve(epoch)
             self.save_model_checkpoints_and_progress(epoch)
 
     def _train_one_epoch(self, epoch: int):
@@ -235,7 +233,6 @@ class Stage1Trainer:
             )
             self.tracker.save_training_progress(
                 self.result_log,
-                logging_config=self.trainer_params.get("logging"),
                 metadata={
                     "run_type": "train_sl",
                     "trainer_params": self.trainer_params,
@@ -243,28 +240,11 @@ class Stage1Trainer:
                 save_plots=epoch > 1,
             )
 
-    def log_training_curve(self, epoch: int):
-        if epoch > 1:
-            image_prefix = f"{self.result_folder}/latest"
-            util_save_log_image_with_label(
-                image_prefix,
-                self.trainer_params["logging"]["log_image_params_1"],
-                self.result_log,
-                labels=["train_reference_length"],
-            )
-            util_save_log_image_with_label(
-                image_prefix,
-                self.trainer_params["logging"]["log_image_params_2"],
-                self.result_log,
-                labels=["train_loss"],
-            )
-
     def save_model_checkpoints_and_progress(self, epoch: int):
         """
         Saves checkpoints in intervals as well as training progress at the checkpoints and when training is done.
         """
         model_save_interval = self.trainer_params["logging"]["model_save_interval"]
-        img_save_interval = self.trainer_params["logging"]["img_save_interval"]
         # Training done?
         all_done = epoch == self.trainer_params["epochs"]
 
@@ -281,28 +261,12 @@ class Stage1Trainer:
                 f"{self.result_folder}/checkpoint-{epoch}.pt",
             )
 
-        if all_done or (epoch % img_save_interval) == 0:
-            image_prefix = f"{self.result_folder}/img/checkpoint-{epoch}"
-            util_save_log_image_with_label(
-                image_prefix,
-                self.trainer_params["logging"]["log_image_params_1"],
-                self.result_log,
-                labels=["train_reference_length"],
-            )
-            util_save_log_image_with_label(
-                image_prefix,
-                self.trainer_params["logging"]["log_image_params_2"],
-                self.result_log,
-                labels=["train_loss"],
-            )
-
         if all_done:
             self.logger.info(" *** Training Done *** ")
             util_print_log_array(self.logger, self.result_log)
             if self.tracker is not None:
                 self.tracker.save_training_progress(
                     self.result_log,
-                    logging_config=self.trainer_params.get("logging"),
                     metadata={
                         "run_type": "train_sl",
                         "trainer_params": self.trainer_params,
