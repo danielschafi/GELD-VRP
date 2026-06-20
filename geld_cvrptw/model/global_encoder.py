@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from geld_cvrptw.env.CVRPTW import StaticState
+from geld_cvrptw.model.helpers import normalize_time_for_model
 from geld.model.attention import FeedForwardModule, RegionAverageLinearAttention
 
 NODE_FEATURE_DIM = 5
@@ -16,7 +17,7 @@ class GlobalEncoder(nn.Module):
         super().__init__()
         embedding_dim = model_params["embedding_dim"]
         self.embedding = nn.Linear(NODE_FEATURE_DIM, embedding_dim, bias=True)
-        self.layer = EncoderLayer(**model_params)
+        self.encoder_layer = EncoderLayer(**model_params)
 
     @staticmethod
     def build_node_features(static_state: StaticState, normalized_coords: torch.Tensor) -> torch.Tensor:
@@ -25,8 +26,8 @@ class GlobalEncoder(nn.Module):
             (
                 normalized_coords,
                 static_state.node_demand.unsqueeze(-1),
-                static_state.node_tw_start.unsqueeze(-1),
-                static_state.node_tw_end.unsqueeze(-1),
+                normalize_time_for_model(static_state.node_tw_start).unsqueeze(-1),
+                normalize_time_for_model(static_state.node_tw_end).unsqueeze(-1),
             ),
             dim=-1,
         )
@@ -39,7 +40,7 @@ class GlobalEncoder(nn.Module):
     ) -> torch.Tensor:
         node_features = self.build_node_features(static_state, normalized_coords)
         embedded_input = self.embedding(node_features)
-        return self.layer(embedded_input, region)
+        return self.encoder_layer(embedded_input, region)
 
 
 class EncoderLayer(nn.Module):

@@ -2,9 +2,10 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from geld_cvrptw.env.CVRPTW import DynamicState
-from geld_cvrptw.model.helpers import LARGE_INSTANCE_THRESHOLD
+from geld_cvrptw.model.helpers import LARGE_INSTANCE_THRESHOLD, normalize_time_for_model
 from geld.model.attention import RMSNorm, FeedForwardModule, AttentionFusionModule
 
 K_NEAREST_NEIGHBORS = 99
@@ -20,7 +21,8 @@ class LocalDecoder(nn.Module):
         decoder_layer_num = model_params["decoder_layer_num"]
         self.depot_node_embedding = nn.Linear(self.embedding_dim, self.embedding_dim, bias=True)
         self.current_node_embedding = nn.Linear(self.embedding_dim, self.embedding_dim, bias=True)
-        self.layers_global = nn.ModuleList([DecoderLayer(**model_params) for _ in range(decoder_layer_num)])
+        self.context_embedding = nn.Linear(3, self.embedding_dim, bias=True)
+        self.decoder_layers = nn.ModuleList([DecoderLayer(**model_params) for _ in range(decoder_layer_num)])
         self.final_projection = nn.Linear(self.embedding_dim, 1, bias=True)
 
     def forward(
@@ -30,11 +32,22 @@ class LocalDecoder(nn.Module):
         normalized_coords: torch.Tensor,
         dis_matrix: torch.Tensor,
     ) -> torch.Tensor:
-        """Predicts the next nodes from the candidate set."""
-        encoded_nodes.shape[0]
-        encoded_nodes.shape[1]
+        """Predicts probabilities for all nodes to be the next one in the tour."""
+        batch_size = encoded_nodes.shape[0]
+        problem_size = encoded_nodes.shape[1]
+        device = encoded_nodes.device
 
-        self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
+        candidate_set = self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
+
+        for layer in self.decoder_layers:
+            candidate_set = layer(candidate_set)
+
+        logits = self.final_projection(candidate_set).squeeze(-1)[:, 1:-1]  # dont need depot + current node
+        probs = F.softmax(logits, dim=-1)
+
+        full_probs = torch.full((batch_size, problem_size), 1e-5, device=device, dtype=probs.dtype)
+        full_probs.scatter_(1, local_candidates_indexes, probs)
+        return full_probs
 
     def build_candidate_set(
         self,
@@ -55,6 +68,9 @@ class LocalDecoder(nn.Module):
         depot_node_embedding = self.depot_node_embedding(encoded_nodes[sample_idx, 0])
         current_node_embedding = self.current_node_embedding(encoded_nodes[sample_idx, current_node_idx])
 
+        context = self.build_context_vector(dynamic_state, dis_matrix)
+        context_embedding = self.context_embedding(context)
+
         # Temporarily set the infeasible / visited nodes in the distance matrix to float(inf)
         # then get the topk closest nodes (indices) from the distance matrix with masked out infeasible nodes.
         # Get the embeddings of these topk nodes. -> local candidates embeddings.
@@ -68,6 +84,18 @@ class LocalDecoder(nn.Module):
         local_candidates_embedding = encoded_nodes.gather(
             1,
             local_candidates_indexes.unsqueeze(-1).expand(-1, -1, self.embedding_dim),
+            # Add a dim (size 1) expand it (to size embedding), that dim has the value repeated (node idx repeated d times)
+            # We need to get each value from the embedding dim separately
+        )
+
+        candidate_set = torch.cat(
+            [
+                depot_node_embedding.unsqueeze(-1),
+                local_candidates_embedding,
+                current_node_embedding.unsqueeze(-1),
+                context_embedding,
+            ],
+            dim=-1,
         )
 
         return (
@@ -77,6 +105,17 @@ class LocalDecoder(nn.Module):
             local_candidates_indexes,
             current_node_idx,
         )
+
+    def build_context_vector(self, dynamic_state: DynamicState, dis_matrix: torch.Tensor) -> torch.Tensor:
+        """Returns the dynamic state vector"""
+        batch_size = dynamic_state.current_time.shape[0]
+        sample_idx = torch.arange(batch_size, device=dynamic_state.current_time.device)
+
+        time_norm = normalize_time_for_model(dynamic_state.current_time)
+        capacity_norm = dynamic_state.remaining_capacity
+        dist_to_depot = dis_matrix[sample_idx, dynamic_state.current_node_idx, 0]
+
+        return torch.stack([time_norm, capacity_norm, dist_to_depot], dim=-1)  # (B,3)
 
     def _local_distance_matrix(
         self,

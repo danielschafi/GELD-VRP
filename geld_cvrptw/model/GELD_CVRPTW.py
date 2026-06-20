@@ -13,7 +13,7 @@ from geld_cvrptw.model.helpers import (
     apply_feasibility_mask,
     compute_distance_matrix,
     approximate_distance_matrix,
-    map_coordinates_to_regions,
+    map_nodes_to_regions,
     normalize_coordinates,
 )
 from geld_cvrptw.model.global_encoder import GlobalEncoder
@@ -43,7 +43,7 @@ class GeldCvrptwModel(nn.Module):
         else:
             self.dis_matrix = compute_distance_matrix(self.normalized_coords)
 
-        self.node_to_region_map = map_coordinates_to_regions(self.normalized_coords)
+        self.node_to_region_map = map_nodes_to_regions(self.normalized_coords)
         self.encoded_nodes = self.encoder(static_state, self.normalized_coords, self.node_to_region_map)
 
     def forward(self, dynamic_state: DynamicState) -> torch.Tensor:

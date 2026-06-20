@@ -4,6 +4,12 @@ import torch
 
 
 LARGE_INSTANCE_THRESHOLD = 10000
+DEPOT_TW_END = 3.0
+
+
+def normalize_time_for_model(time: torch.Tensor) -> torch.Tensor:
+    """Scale absolute time values to ~[0, 1] using the depot time-window end."""
+    return time / DEPOT_TW_END
 
 
 def compute_distance_matrix(normalized_node_coords: torch.Tensor) -> torch.Tensor:
@@ -30,7 +36,7 @@ def approximate_distance_matrix(node_coords: torch.Tensor, block_size: int = 500
     return distance_matrix
 
 
-def map_coordinates_to_regions(normalized_node_coords: torch.Tensor, grid_size: int = 3) -> torch.Tensor:
+def map_nodes_to_regions(normalized_node_coords: torch.Tensor, grid_size: int = 3) -> torch.Tensor:
     """Assign each node to a region for RALA (m = grid_size²)."""
     region_indices = torch.floor(normalized_node_coords * grid_size).long()
     region_indices = torch.clamp(region_indices, min=0, max=grid_size - 1)
