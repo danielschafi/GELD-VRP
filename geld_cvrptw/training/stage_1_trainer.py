@@ -15,7 +15,7 @@ from geld_cvrptw.utils.logging import (
     util_print_log_array,
     util_save_log_image_with_label,
 )
-from geld.utils.device import setup_device
+from geld_cvrptw.utils.device import setup_device
 
 
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel

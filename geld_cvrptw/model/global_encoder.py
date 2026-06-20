@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from geld_cvrptw.env.CVRPTW import StaticState
 from geld_cvrptw.model.helpers import normalize_time_for_model
-from geld.model.attention import FeedForwardModule, RegionAverageLinearAttention
+from geld_cvrptw.model.attention import FeedForwardModule, RegionAverageLinearAttention
 
 NODE_FEATURE_DIM = 5
 

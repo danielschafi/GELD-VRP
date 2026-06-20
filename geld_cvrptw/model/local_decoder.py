@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from geld_cvrptw.env.CVRPTW import DynamicState
 from geld_cvrptw.model.helpers import LARGE_INSTANCE_THRESHOLD, normalize_time_for_model
-from geld.model.attention import RMSNorm, FeedForwardModule, AttentionFusionModule
+from geld_cvrptw.model.attention import RMSNorm, FeedForwardModule, AttentionFusionModule
 
 K_NEAREST_NEIGHBORS = 99
 
