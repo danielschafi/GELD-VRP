@@ -20,7 +20,7 @@ from geld_cvrptw.utils.device import setup_device
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv
 from geld_cvrptw.data.loaders import TOUR_PAD_VALUE
-from geld_cvrptw.model.helpers import teacher_action_prob
+from geld_cvrptw.model.helpers import teacher_action_prob, apply_feasibility_mask
 
 
 class Stage1Trainer:
@@ -165,12 +165,14 @@ class Stage1Trainer:
                 predicted_node = label_tour[:, 0]
                 step_prob = torch.ones(batch_size, 1, device=self.device)
             else:
-                probs = self.model(dynamic_state)
+                raw_probs = self.model(dynamic_state, mask_feasibility=False)
+                probs = apply_feasibility_mask(raw_probs, dynamic_state.ninf_mask)
                 teacher_node = label_tour[:, current_step - 1]
-                predicted_node = probs.argmax(dim=1)
-                step_prob = teacher_action_prob(probs, teacher_node).unsqueeze(1)
                 teacher_node = torch.where(active, teacher_node, label_tour[:, 0])
+                predicted_node = probs.argmax(dim=1)
                 predicted_node = torch.where(active, predicted_node, label_tour[:, 0])
+                step_prob = teacher_action_prob(raw_probs, teacher_node).unsqueeze(1)
+                step_prob = torch.where(active.unsqueeze(1), step_prob, torch.ones_like(step_prob))
 
                 # Negative log-likelihood of the label action under the model distribution.
                 loss_mean = -step_prob[active].type(torch.float64).log().mean()

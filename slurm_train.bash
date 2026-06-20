@@ -12,4 +12,4 @@
 
 
 cd /home/schafhdaniel@edu.local/GELD-VRP
-uv run python -m geld_cvrptw.cli.train_stage_1 --debug
+uv run python -m geld_cvrptw.cli.train_stage_1 --wandb --wandb-run-name cvrptw-stage1-full

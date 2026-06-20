@@ -50,6 +50,11 @@ class LocalDecoder(nn.Module):
             candidate_set = layer(candidate_set, norm_local_distance_matrix)
 
         logits = self.final_projection(candidate_set).squeeze(-1)[:, 1 : 1 + k]
+        if self.training:
+            cand_dist = dis_matrix[torch.arange(batch_size, device=device), dynamic_state.current_node_idx].gather(
+                1, local_candidates_indexes
+            )
+            logits = logits.masked_fill(~torch.isfinite(cand_dist), float("-inf"))
         probs = F.softmax(logits, dim=-1)
 
         full_probs = torch.full((batch_size, problem_size), 1e-5, device=device, dtype=probs.dtype)
@@ -82,8 +87,14 @@ class LocalDecoder(nn.Module):
         infeasible = dynamic_state.ninf_mask == float("-inf")
         distances = distances.masked_fill(infeasible, float("inf"))
 
-        k = min(K_NEAREST_NEIGHBORS, problem_size)
-        local_candidates_indexes = torch.topk(distances, k=k, dim=1, largest=False).indices
+        if self.training:
+            sorted_dist, sorted_idx = distances.sort(dim=1)
+            k = int(torch.isfinite(sorted_dist).sum(dim=1).max().item())
+            k = max(k, 1)
+            local_candidates_indexes = sorted_idx[:, :k]
+        else:
+            k = min(K_NEAREST_NEIGHBORS, problem_size)
+            local_candidates_indexes = torch.topk(distances, k=k, dim=1, largest=False).indices
         local_candidates_embedding = encoded_nodes.gather(
             1, local_candidates_indexes.unsqueeze(-1).expand(-1, -1, self.embedding_dim)
         )

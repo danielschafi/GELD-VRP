@@ -19,13 +19,13 @@ def build_parser() -> argparse.ArgumentParser:
     """Build argument parser for stage-1 training."""
     parser = argparse.ArgumentParser(description="GELD stage-1 supervised training")
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--train-episodes", type=int, default=1_000_000)
+    parser.add_argument("--train-episodes", type=int, default=1000000) # this is a cap, is set to dataset size (samples per epoch)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--wandb", action="store_true", help="Log metrics to Weights & Biases")
-    parser.add_argument("--wandb-project", type=str, default="geld")
+    parser.add_argument("--wandb-project", type=str, default="geld-vrp")
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument(
         "--batch-log-interval",

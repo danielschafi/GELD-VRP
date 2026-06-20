@@ -50,8 +50,8 @@ class GeldCvrptwModel(nn.Module):
         if not self.training:
             self.encoded_nodes = self.encoder(static_state, self.normalized_coords, self.node_to_region_map)
 
-    def forward(self, dynamic_state: DynamicState) -> torch.Tensor:
-        """Return masked next-node probabilities, shape (batch, num_nodes)."""
+    def forward(self, dynamic_state: DynamicState, mask_feasibility: bool = True) -> torch.Tensor:
+        """Return next-node probabilities, shape (batch, num_nodes)."""
         if self.static_state is None or self.normalized_coords is None or self.dis_matrix is None:
             raise RuntimeError("Call embed_static_state_once before forward.")
 
@@ -70,4 +70,6 @@ class GeldCvrptwModel(nn.Module):
             self.normalized_coords,
             self.dis_matrix,
         )
-        return apply_feasibility_mask(probs, dynamic_state.ninf_mask)
+        if mask_feasibility:
+            return apply_feasibility_mask(probs, dynamic_state.ninf_mask)
+        return probs
