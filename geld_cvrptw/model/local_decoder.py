@@ -37,10 +37,10 @@ class LocalDecoder(nn.Module):
         problem_size = encoded_nodes.shape[1]
         device = encoded_nodes.device
 
-        candidate_set = self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
-
+        candidate_set, local_candidates_indexes = self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
+        norm_local_distance_matrix = self.build_local_distance_matrix(dis_matrix, dynamic_state)
         for layer in self.decoder_layers:
-            candidate_set = layer(candidate_set)
+            candidate_set = layer(candidate_set, norm_local_distance_matrix)
 
         logits = self.final_projection(candidate_set).squeeze(-1)[:, 1:-1]  # dont need depot + current node
         probs = F.softmax(logits, dim=-1)
@@ -55,6 +55,8 @@ class LocalDecoder(nn.Module):
         dynamic_state: DynamicState,
         dis_matrix: torch.Tensor,
     ):
+        """Returns the candidate set of k nearest feasible nodes + dynamic context vector for input to the decoder layers.
+        Also returns the indices of the nodes that are in the candidate set."""
         batch_size = encoded_nodes.shape[0]
         problem_size = encoded_nodes.shape[1]
         device = encoded_nodes.device
@@ -71,22 +73,18 @@ class LocalDecoder(nn.Module):
         context = self.build_context_vector(dynamic_state, dis_matrix)
         context_embedding = self.context_embedding(context)
 
-        # Temporarily set the infeasible / visited nodes in the distance matrix to float(inf)
-        # then get the topk closest nodes (indices) from the distance matrix with masked out infeasible nodes.
-        # Get the embeddings of these topk nodes. -> local candidates embeddings.
+        # Mask out infeasible next nodes
         distances = dis_matrix[sample_idx, current_node_idx]
         infeasible = dynamic_state.ninf_mask == float("-inf")
         distances = distances.masked_fill(infeasible, float("inf"))
 
         k = min(K_NEAREST_NEIGHBORS, problem_size)
         local_candidates_indexes = torch.topk(distances, k=k, dim=1, largest=False).indices
-
         local_candidates_embedding = encoded_nodes.gather(
-            1,
-            local_candidates_indexes.unsqueeze(-1).expand(-1, -1, self.embedding_dim),
-            # Add a dim (size 1) expand it (to size embedding), that dim has the value repeated (node idx repeated d times)
-            # We need to get each value from the embedding dim separately
+            1, local_candidates_indexes.unsqueeze(-1).expand(-1, -1, self.embedding_dim)
         )
+        # Add a dim (size 1) expand it (to size embedding), that dim has the value repeated (node idx repeated d times)
+        # We need to get each value from the embedding dim separately
 
         candidate_set = torch.cat(
             [
@@ -97,14 +95,28 @@ class LocalDecoder(nn.Module):
             ],
             dim=-1,
         )
+        return candidate_set, local_candidates_indexes
 
-        return (
-            depot_node_embedding,
-            current_node_embedding,
-            local_candidates_embedding,
-            local_candidates_indexes,
-            current_node_idx,
-        )
+    def local_distance_matrix(
+        self,
+        candidate_node_indices: torch.Tensor,
+        dis_matrix: torch.Tensor,
+        normalized_coords: torch.Tensor,
+        problem_size: int,
+    ) -> torch.Tensor:
+        """Build / Extract the normalized distance matrix for the candidate set nodes."""
+        batch_size = candidate_node_indices.size(0)
+        sample_idx = torch.arange(batch_size, dtype=torch.long, device=dis_matrix.device)
+
+        if problem_size > LARGE_INSTANCE_THRESHOLD:
+            candidate_indices = candidate_node_indices.unsqueeze(2).expand(batch_size, -1, 2)
+            coords = normalized_coords.gather(dim=1, index=candidate_indices)
+            local_dist = torch.cdist(coords, coords, p=2)
+            local_dist.diagonal(dim1=-2, dim2=-1).zero_()
+            return local_dist
+
+        candidate_indices = candidate_node_indices.unsqueeze(1)
+        return dis_matrix[sample_idx.unsqueeze(1), candidate_indices, candidate_indices.transpose(1, 2)]
 
     def build_context_vector(self, dynamic_state: DynamicState, dis_matrix: torch.Tensor) -> torch.Tensor:
         """Returns the dynamic state vector"""
@@ -116,26 +128,6 @@ class LocalDecoder(nn.Module):
         dist_to_depot = dis_matrix[sample_idx, dynamic_state.current_node_idx, 0]
 
         return torch.stack([time_norm, capacity_norm, dist_to_depot], dim=-1)  # (B,3)
-
-    def _local_distance_matrix(
-        self,
-        candidate_node_indices: torch.Tensor,
-        dis_matrix: torch.Tensor,
-        normalized_coords: torch.Tensor,
-        problem_size: int,
-    ) -> torch.Tensor:
-        batch_size = candidate_node_indices.size(0)
-        batch_idx = torch.arange(batch_size, dtype=torch.long, device=dis_matrix.device)
-
-        if problem_size > LARGE_INSTANCE_THRESHOLD:
-            index_un = candidate_node_indices.unsqueeze(2).expand(batch_size, -1, 2)
-            coords = normalized_coords.gather(dim=1, index=index_un)
-            local_dist = torch.cdist(coords, coords, p=2)
-            local_dist.diagonal(dim1=-2, dim2=-1).zero_()
-            return local_dist
-
-        index_un = candidate_node_indices.unsqueeze(1)
-        return dis_matrix[batch_idx.unsqueeze(1), index_un, index_un.transpose(1, 2)]
 
 
 class DecoderLayer(nn.Module):
