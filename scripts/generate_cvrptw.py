@@ -70,7 +70,6 @@ def assemble_solution_records(
 
 def solve_records_parallel(
     records: list[tuple],
-    *,
     workers: int,
     max_iteration: int,
     seed: int,
@@ -145,7 +144,6 @@ def solve_records_parallel(
 
 def process_scale(
     scale: float,
-    *,
     num_samples: int,
     output_dir: Path,
     workers: int,

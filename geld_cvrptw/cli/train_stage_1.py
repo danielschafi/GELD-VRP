@@ -17,8 +17,9 @@ from geld_cvrptw.utils.logging import create_logger, get_result_folder
 
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser for stage-1 training."""
+    stage_1_defaults = default_training_stage_1_params()
     parser = argparse.ArgumentParser(description="GELD stage-1 supervised training")
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=stage_1_defaults["epochs"])
     parser.add_argument("--train-episodes", type=int, default=1000000) # this is a cap, is set to dataset size (samples per epoch)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--cuda-device", type=int, default=0)

@@ -117,6 +117,26 @@ class CVRPTWEnv:
         self.full_label_tours = dataset["label_tours"].requires_grad_(False)
         self.full_label_costs = dataset["costs"].requires_grad_(False)
 
+    def load_problem_tensors(
+        self,
+        coords: torch.Tensor,
+        demand: torch.Tensor,
+        tw_start: torch.Tensor,
+        tw_end: torch.Tensor,
+        service_time: torch.Tensor,
+    ) -> None:
+        """Load one batch tensors for inference/evaluation"""
+        self.batch_coords = coords
+        self.batch_demand = demand
+        self.batch_tw_start = tw_start
+        self.batch_tw_end = tw_end
+        self.batch_service_time = service_time
+        self.batch_label_tours = None
+        self.batch_label_costs = None
+        self.batch_size = coords.size(0)
+        self.num_nodes = coords.size(1)
+        self.sync_batch_to_device()
+
     def num_samples(self) -> int:
         """Number of loaded training instances."""
         return len(self.full_node_coords)
@@ -277,7 +297,7 @@ class CVRPTWEnv:
         travel_time_to_depot = dist_next_node_to_depot / self.speed
         return_is_out_of_depot_tw = (
             earliest_possible_service_start + self.batch_service_time + travel_time_to_depot
-            > self.depot_tw_end + round_error_tol
+            > self.batch_tw_end[:, 0:1] + round_error_tol
         )
         self.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
 
