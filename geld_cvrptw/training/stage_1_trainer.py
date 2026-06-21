@@ -77,8 +77,14 @@ class Stage1Trainer:
         self.env.set_device(self.device)
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
-            train_reference_length, train_predicted_length, train_loss = self._train_one_epoch(epoch)
-            self.log_metrics(epoch, train_reference_length, train_predicted_length, train_loss)
+            train_reference_length, train_predicted_length, train_loss, learning_rate = self._train_one_epoch(epoch)
+            self.log_metrics(
+                epoch,
+                train_reference_length,
+                train_predicted_length,
+                train_loss,
+                learning_rate,
+            )
             self.save_model_checkpoints_and_progress(epoch)
 
     def _train_one_epoch(self, epoch: int):
@@ -116,6 +122,7 @@ class Stage1Trainer:
                     f"Loss: {loss_meter.avg:.4f}"
                 )
 
+        learning_rate = self.optimizer.param_groups[0]["lr"]
         self.scheduler.step()
 
         # Get averages over all batches
@@ -123,7 +130,7 @@ class Stage1Trainer:
         avg_predicted_length = predicted_length_meter.avg
         avg_loss = loss_meter.avg
 
-        return avg_reference_length, avg_predicted_length, avg_loss
+        return avg_reference_length, avg_predicted_length, avg_loss, learning_rate
 
     def _train_one_batch(self, batch_offset: int, batch_size: int):
         """
@@ -207,6 +214,7 @@ class Stage1Trainer:
         train_reference_length: float,
         train_predicted_length: float,
         train_loss: float,
+        learning_rate: float,
     ):
         """Does all the logging, tracking to wandb etc for one epoch"""
         self.logger.info("=================================================================")
@@ -215,12 +223,13 @@ class Stage1Trainer:
         self.result_log.append("train_reference_length", epoch, train_reference_length)
         self.result_log.append("train_predicted_length", epoch, train_predicted_length)
         self.result_log.append("train_loss", epoch, train_loss)
+        self.result_log.append("learning_rate", epoch, learning_rate)
 
         elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(epoch, self.trainer_params["epochs"])
         self.logger.info(
             f"Epoch {epoch:3d}/{self.trainer_params['epochs']:3d}: "
             f"ref={train_reference_length:.4f}, pred={train_predicted_length:.4f}, "
-            f"loss={train_loss:.4f}, "
+            f"loss={train_loss:.4f}, lr={learning_rate:.2e}, "
             f"Time Est.: Elapsed[{elapsed_time_str}], Remain[{remain_time_str}]"
         )
         if self.tracker is not None:
@@ -230,6 +239,7 @@ class Stage1Trainer:
                     "train_reference_length": train_reference_length,
                     "train_predicted_length": train_predicted_length,
                     "train_loss": train_loss,
+                    "learning_rate": learning_rate,
                 },
                 step=epoch,
             )
