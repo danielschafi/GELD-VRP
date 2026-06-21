@@ -16,8 +16,10 @@ from geld.paths import project_root, training_stage_1_data_dir
 from geld_cvrptw.data.generator import (
     DEFAULT_SERVICE_TIME,
     DEFAULT_SPEED,
+    allocate_problem_output_paths,
     generate_instances,
     label_path,
+    labels_complete,
     load_problem_records,
     problem_path,
     save_problem_records,
@@ -155,32 +157,52 @@ def process_scale(
     resume: bool,
     overwrite: bool,
 ) -> None:
-    problem_file = problem_path(
-        output_dir,
-        num_samples=num_samples,
-        scale=scale,
-        service_time=DEFAULT_SERVICE_TIME,
-        speed=DEFAULT_SPEED,
-    )
-    label_file = label_path(problem_file)
+    if solve_only:
+        problem_file = problem_path(
+            output_dir,
+            num_samples=num_samples,
+            scale=scale,
+            service_time=DEFAULT_SERVICE_TIME,
+            speed=DEFAULT_SPEED,
+        )
+        label_file = label_path(problem_file)
+        if not problem_file.is_file():
+            raise FileNotFoundError(f"--solve-only requires existing problem file: {problem_file}")
+        run_index = 0
+    else:
+        problem_file, label_file, run_index = allocate_problem_output_paths(
+            output_dir,
+            num_samples=num_samples,
+            scale=scale,
+            service_time=DEFAULT_SERVICE_TIME,
+            speed=DEFAULT_SPEED,
+            overwrite=overwrite,
+        )
+
+    effective_seed = seed + run_index
 
     if not solve_only:
         if problem_file.is_file() and not overwrite:
             print(f"Reusing existing problem file: {problem_file}")
         else:
-            print(f"Generating {num_samples} instances for scale={scale}")
+            print(
+                f"Generating {num_samples} instances for scale={scale} "
+                f"(run_index={run_index}, seed={effective_seed})"
+            )
             records = generate_instances(
                 num_samples,
                 alpha=scale,
-                seed=seed,
+                seed=effective_seed,
                 batch_size=batch_size,
             )
             save_problem_records(problem_file, records)
             print(f"Saved problems to {problem_file}")
-    elif not problem_file.is_file():
-        raise FileNotFoundError(f"--solve-only requires existing problem file: {problem_file}")
 
     if skip_solve:
+        return
+
+    if labels_complete(problem_file, label_file, num_samples):
+        print(f"Labels already complete, skipping HGS: {label_file}")
         return
 
     records = load_problem_records(problem_file)
@@ -192,7 +214,7 @@ def process_scale(
         records,
         workers=workers,
         max_iteration=hgs_iterations,
-        seed=seed,
+        seed=effective_seed,
         resume=resume and not overwrite,
         label_file=label_file,
         cache_dir=cache_dir,
@@ -212,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scales", type=str, default=",".join(str(scale) for scale in DEFAULT_SCALES))
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
-    parser.add_argument("--hgs-iterations", type=int, default=20_000)
+    parser.add_argument("--hgs-iterations", type=int, default=2000) # matching the rest of the data https://github.com/CIAM-Group/Rethinking_Constraint_Tightness/blob/main/CVRPTW/Generate_data/generate_data.sh
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument("--gen-batch-size", type=int, default=512)
     parser.add_argument("--skip-solve", action="store_true")
