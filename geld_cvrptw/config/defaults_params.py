@@ -29,8 +29,10 @@ def default_training_stage_1_optimizer_params() -> dict:
     return {
         "optimizer": {"lr": 1e-4},
         "scheduler": {
-            "milestones": [i for i in range(1, 50)],
-            "gamma": 0.97,
+            # Was (TSP GELD): milestones=[i for i in range(1, 50)], gamma=0.97 — LR dropped 3% every epoch.
+            # CVRPTW plateaued after ~epoch 25; keep full LR longer, then step down at coarse milestones.
+            "milestones": [20, 35, 45],
+            "gamma": 0.5,
         },
     }
 
@@ -105,4 +107,31 @@ def default_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict
             "path": str(project_root() / "result" / "pre_trained_model"),
             "epoch": 49,
         },
+    }
+
+
+def default_cvrptw_env_params() -> dict:
+    """Minimal env params for CVRPTW inference."""
+    return {}
+
+
+def default_cvrptw_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
+    """CVRPTW evaluation defaults (greedy decoder, no post-processors)."""
+    return {
+        "use_cuda": use_cuda,
+        "cuda_device_num": cuda_device_num,
+        "model_load": {
+            "path": str(project_root() / "result" / "pre_trained_model"),
+            "epoch": 49,
+        },
+        "synthetic": {
+            "size": 100,
+            "episodes": 1000,
+            "batch_size": 100,
+        },
+        "decoder": {
+            "name": "greedy",
+            "bootstrap_start_node": 1,
+        },
+        "postprocessors": [],
     }

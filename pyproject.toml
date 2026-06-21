@@ -22,6 +22,8 @@ geld-train-sl = "geld.cli.train_sl:main"
 geld-train-stage2 = "geld.cli.train_stage2:main"
 geld-eval-synthetic = "geld.cli.eval_synthetic:main"
 geld-eval-tsplib = "geld.cli.eval_tsplib:main"
+geld-cvrptw-eval = "geld_cvrptw.cli.eval:main"
+geld-cvrptw-train-stage1 = "geld_cvrptw.cli.train_stage_1:main"
 
 [build-system]
 requires = ["hatchling"]

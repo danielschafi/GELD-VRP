@@ -32,7 +32,72 @@ Download `train_TSP100_n100w-001.txt` from [LEHD](https://github.com/CIAM-Group/
 
 ### Test Datasets
 
-Benchmark instances live in `Test_data/` (synthetic, TSPLIB, National TSP). Baseline tours for post-processing are in `baseline_solutions/`.
+TSP benchmark instances live in `Test_data/` (synthetic, TSPLIB, National TSP). Baseline tours for post-processing are in `baseline_solutions/`.
+
+CVRPTW benchmark instances (Solomon and Homberger) are stored under `data/test/`:
+
+```
+data/test/
+├── solomon/     # 56 VRPTW instances (100 customers)
+├── homberger/   # 300 VRPTW instances (200–1000 customers)
+└── synthetic/
+```
+
+Download from [CVRPLIB VRPTW instances](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances/2):
+
+```bash
+mkdir -p data/test/solomon data/test/homberger
+
+curl -fsSL -o data/test/Solomon.7z \
+  "https://galgos.inf.puc-rio.br/cvrplib/index.php/en/download/instance-set/22"
+curl -fsSL -o data/test/Homberger.7z \
+  "https://galgos.inf.puc-rio.br/cvrplib/index.php/en/download/instance-set/23"
+
+uv run --with py7zr python - <<'EOF'
+import py7zr
+from pathlib import Path
+
+root = Path("data/test")
+for archive, subdir, nested in [
+    ("Solomon.7z", "solomon", "Solomon"),
+    ("Homberger.7z", "homberger", "Holmberger"),
+]:
+    out = root / subdir
+    with py7zr.SevenZipFile(root / archive, mode="r") as z:
+        z.extractall(path=out)
+    nested_dir = out / nested
+    if nested_dir.is_dir():
+        for path in nested_dir.iterdir():
+            path.rename(out / path.name)
+        nested_dir.rmdir()
+    (root / archive).unlink()
+EOF
+```
+
+Each instance is a `.txt` file in Solomon format; matching `.sol` reference solutions are included. If you have `p7zip-full` installed, you can extract with `7z x` instead of the Python snippet above.
+
+MVMoE-style synthetic VRPTW test sets for gap evaluation (optional, used by `geld-cvrptw-eval --benchmark synthetic`):
+
+```bash
+mkdir -p data/test/synthetic
+curl -fsSL -o data/test/synthetic/vrptw100_uniform.pkl \
+  "https://raw.githubusercontent.com/RoyalSkye/Routing-MVMoE/main/data/VRPTW/vrptw100_uniform.pkl"
+curl -fsSL -o data/test/synthetic/hgs_vrptw100_uniform.pkl \
+  "https://raw.githubusercontent.com/RoyalSkye/Routing-MVMoE/main/data/VRPTW/hgs_vrptw100_uniform.pkl"
+```
+
+### CVRPTW evaluation
+
+Evaluate a trained GELD-CVRPTW checkpoint on synthetic, Solomon, and Homberger benchmarks:
+
+```bash
+uv run geld-cvrptw-eval \
+  --checkpoint-path result/your_run \
+  --checkpoint-epoch 49 \
+  --benchmark all
+```
+
+Use `--benchmark synthetic`, `solomon`, or `homberger` for a single suite. Results are written under `result/<timestamp>/` (`eval_instances.csv`, `eval_summary.json`).
 
 ## Usage
 

@@ -289,3 +289,13 @@ This assumes RC+BS improved tour is better than the greedy decoded one.
 
 **Goal**
 - SIL increases the models ability to work with bigger problem sizes
+
+
+
+---
+
+Train Data:
+Download from here https://drive.google.com/drive/folders/1KlmVm1fiplF5jZKfVG1SpKqz3bbrxQy-
+That is train data used in https://github.com/CIAM-Group/Rethinking_Constraint_Tightness
+Generate additional data using the generate_cvrptw.py script
+Delete the 2.5 scale labels (they have missing labels hgs files)

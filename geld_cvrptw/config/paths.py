@@ -31,3 +31,23 @@ def baseline_solutions_dir() -> Path:
 def result_dir() -> Path:
     """Path to training and evaluation result outputs."""
     return data_dir() / "result"
+
+
+def test_data_dir() -> Path:
+    """Path to CVRPTW evaluation benchmarks."""
+    return data_dir() / "test"
+
+
+def solomon_dir() -> Path:
+    """Path to Solomon VRPTW instances."""
+    return test_data_dir() / "solomon"
+
+
+def homberger_dir() -> Path:
+    """Path to Homberger VRPTW instances."""
+    return test_data_dir() / "homberger"
+
+
+def synthetic_test_dir() -> Path:
+    """Path to MVMoE-style synthetic VRPTW test instances."""
+    return test_data_dir() / "synthetic"
