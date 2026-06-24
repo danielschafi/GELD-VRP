@@ -187,7 +187,7 @@ class Stage1Trainer:
                 loss_mean.backward()
                 self.optimizer.step()
 
-            dynamic_state = self.env.step(teacher_node, predicted_node)
+            dynamic_state = self.env.step(teacher_node, predicted_node, dynamic_state)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
             current_step += 1
 

@@ -56,8 +56,10 @@ class GeldCvrptwModel(nn.Module):
             raise RuntimeError("Call embed_static_state_once before forward.")
 
         if self.training:
+            # encode each stepd  
             encoded_nodes = self.encoder(self.static_state, self.normalized_coords, self.node_to_region_map)
         else:
+            # encode only once
             if self.encoded_nodes is None:
                 self.encoded_nodes = self.encoder(
                     self.static_state, self.normalized_coords, self.node_to_region_map
