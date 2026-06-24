@@ -40,6 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--synthetic-episodes", type=int, default=defaults["synthetic"]["episodes"])
     parser.add_argument("--synthetic-batch-size", type=int, default=defaults["synthetic"]["batch_size"])
     parser.add_argument("--bootstrap-start-node", type=int, default=defaults["decoder"]["bootstrap_start_node"])
+    parser.add_argument("--no-beam", action="store_true", help="Use greedy decoding instead of beam search")
+    parser.add_argument("--beam-size", type=int, default=defaults["decoder"]["beam_size"])
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--wandb", action="store_true")
@@ -61,6 +63,8 @@ def main() -> None:
     eval_params["synthetic"]["episodes"] = args.synthetic_episodes
     eval_params["synthetic"]["batch_size"] = args.synthetic_batch_size
     eval_params["decoder"]["bootstrap_start_node"] = args.bootstrap_start_node
+    eval_params["decoder"]["name"] = "greedy" if args.no_beam else "beam_search"
+    eval_params["decoder"]["beam_size"] = args.beam_size
 
     tracker = ExperimentTracker(
         get_result_folder(),

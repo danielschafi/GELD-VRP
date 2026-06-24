@@ -116,7 +116,7 @@ def default_cvrptw_env_params() -> dict:
 
 
 def default_cvrptw_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
-    """CVRPTW evaluation defaults (greedy decoder, no post-processors)."""
+    """CVRPTW evaluation defaults (beam search decoder, no post-processors)."""
     return {
         "use_cuda": use_cuda,
         "cuda_device_num": cuda_device_num,
@@ -130,8 +130,10 @@ def default_cvrptw_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) 
             "batch_size": 100,
         },
         "decoder": {
-            "name": "greedy",
+            "name": "beam_search",
             "bootstrap_start_node": 1,
+            "beam_size": 16,
+            "max_steps_factor": 4,
         },
         "postprocessors": [],
     }

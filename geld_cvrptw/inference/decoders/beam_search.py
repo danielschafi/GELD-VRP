@@ -46,15 +46,19 @@ class BeamSearchDecoder(Decoder):
     Decodes a tour using BeamSearch on the models probabilities for next nodes. 
     Beam search keeps the B best partial tours ranked by cumulative log-probability, then selects the final tour by actual Euclidean tour length
     """
-    def __init__(self, bootstrap_start_node: int = 1, max_steps_factor: int = 4):
+    def __init__(
+        self,
+        bootstrap_start_node: int = 1,
+        max_steps_factor: int = 4,
+        beam_size: int = 16,
+    ):
         """
         we need two 
         """
         self.bootstrap_start_node = bootstrap_start_node
         # because of return to depot trips we need more steps than tour length. this is for safety only we stop if all are done
-        self.max_steps_factor = max_steps_factor 
-
-        self.beam_size = 16
+        self.max_steps_factor = max_steps_factor
+        self.beam_size = beam_size
 
     @torch.no_grad()
     def decode(self, model: GeldCvrptwModel, env: CVRPTWEnv) -> SolveResult:

@@ -31,13 +31,16 @@ class LocalDecoder(nn.Module):
         dynamic_state: DynamicState,
         normalized_coords: torch.Tensor,
         dis_matrix: torch.Tensor,
+        depot_tw_end: torch.Tensor,
     ) -> torch.Tensor:
         """Predicts probabilities for all nodes to be the next one in the tour."""
         batch_size = encoded_nodes.shape[0]
         problem_size = encoded_nodes.shape[1]
         device = encoded_nodes.device
 
-        candidate_set, local_candidates_indexes = self.build_candidate_set(encoded_nodes, dynamic_state, dis_matrix)
+        candidate_set, local_candidates_indexes = self.build_candidate_set(
+            encoded_nodes, dynamic_state, dis_matrix, depot_tw_end
+        )
         k = local_candidates_indexes.size(1)
         norm_local_distance_matrix = self.local_distance_matrix(
             dis_matrix,
@@ -66,6 +69,7 @@ class LocalDecoder(nn.Module):
         encoded_nodes: torch.Tensor,
         dynamic_state: DynamicState,
         dis_matrix: torch.Tensor,
+        depot_tw_end: torch.Tensor,
     ):
         """Returns the candidate set of k nearest feasible nodes + dynamic context vector for input to the decoder layers.
         Also returns the indices of the nodes that are in the candidate set."""
@@ -79,7 +83,7 @@ class LocalDecoder(nn.Module):
         depot_node_embedding = self.depot_node_embedding(encoded_nodes[sample_idx, 0])
         current_node_embedding = self.current_node_embedding(encoded_nodes[sample_idx, current_node_idx])
 
-        context = self.build_context_vector(dynamic_state, dis_matrix)
+        context = self.build_context_vector(dynamic_state, dis_matrix, depot_tw_end)
         context_embedding = self.context_embedding(context)
 
         # Mask out infeasible next nodes
@@ -152,12 +156,17 @@ class LocalDecoder(nn.Module):
         zeros_col = torch.zeros(batch_size, seq_len + 1, 1, device=device, dtype=local_dist.dtype)
         return torch.cat([local_dist, zeros_col], dim=2)
 
-    def build_context_vector(self, dynamic_state: DynamicState, dis_matrix: torch.Tensor) -> torch.Tensor:
+    def build_context_vector(
+        self,
+        dynamic_state: DynamicState,
+        dis_matrix: torch.Tensor,
+        depot_tw_end: torch.Tensor,
+    ) -> torch.Tensor:
         """Returns the dynamic state vector"""
         batch_size = dynamic_state.current_time.shape[0]
         sample_idx = torch.arange(batch_size, device=dynamic_state.current_time.device)
 
-        time_norm = normalize_time_for_model(dynamic_state.current_time)
+        time_norm = normalize_time_for_model(dynamic_state.current_time, depot_tw_end)
         capacity_norm = dynamic_state.remaining_capacity
         dist_to_depot = dis_matrix[sample_idx, dynamic_state.current_node_idx, 0]
 

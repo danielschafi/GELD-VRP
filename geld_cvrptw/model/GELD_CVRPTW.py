@@ -29,6 +29,7 @@ class GeldCvrptwModel(nn.Module):
         self.encoder = GlobalEncoder(**model_params)
         self.decoder = LocalDecoder(**model_params)
         self.static_state: StaticState | None = None
+        self.time_horizon: torch.Tensor | None = None
         self.encoded_nodes = None
         self.normalized_coords = None
         self.dis_matrix = None
@@ -37,6 +38,7 @@ class GeldCvrptwModel(nn.Module):
     def embed_static_state_once(self, static_state: StaticState) -> None:
         """Normalize topology, build distance matrix, and assign RALA regions for one instance."""
         self.static_state = static_state
+        self.time_horizon = static_state.node_tw_end[:, 0]
         node_coords = static_state.node_coords
         self.normalized_coords = normalize_coordinates(node_coords)
 
@@ -71,6 +73,7 @@ class GeldCvrptwModel(nn.Module):
             dynamic_state,
             self.normalized_coords,
             self.dis_matrix,
+            self.time_horizon,
         )
         if mask_feasibility:
             return apply_feasibility_mask(probs, dynamic_state.ninf_mask)

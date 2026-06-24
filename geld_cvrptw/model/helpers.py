@@ -7,9 +7,18 @@ LARGE_INSTANCE_THRESHOLD = 10000
 DEPOT_TW_END = 3.0
 
 
-def normalize_time_for_model(time: torch.Tensor) -> torch.Tensor:
-    """Scale absolute time values to ~[0, 1] using the depot time-window end."""
-    return time / DEPOT_TW_END
+def normalize_time_for_model(time_to_normalize: torch.Tensor, depot_tw_end: torch.Tensor | None = None) -> torch.Tensor:
+    """
+    Normalize times as fractions of depot end time ~[0,1]
+    """
+    if depot_tw_end is None:
+        return time_to_normalize / DEPOT_TW_END
+    scale = depot_tw_end.clamp(min=1e-6)
+    if time_to_normalize.dim() == 2 and scale.dim() == 1:
+        scale = scale.unsqueeze(-1)
+    if time_to_normalize.dim() == 1 and scale.dim() == 2:
+        scale = scale.squeeze(-1)
+    return time_to_normalize / scale
 
 
 def compute_distance_matrix(normalized_node_coords: torch.Tensor) -> torch.Tensor:
