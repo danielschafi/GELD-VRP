@@ -22,13 +22,13 @@ class GlobalEncoder(nn.Module):
     @staticmethod
     def build_node_features(static_state: StaticState, normalized_coords: torch.Tensor) -> torch.Tensor:
         """Stack per-node inputs for Linear(5, d): coords + demand + time windows."""
-        time_horizon = static_state.node_tw_end[:, 0:1]
+        depot_tw_end = static_state.node_tw_end[:, 0:1]
         return torch.cat(
             (
                 normalized_coords,
                 static_state.node_demand.unsqueeze(-1),
-                normalize_time_for_model(static_state.node_tw_start, time_horizon).unsqueeze(-1),
-                normalize_time_for_model(static_state.node_tw_end, time_horizon).unsqueeze(-1),
+                normalize_time_for_model(static_state.node_tw_start, depot_tw_end).unsqueeze(-1),
+                normalize_time_for_model(static_state.node_tw_end, depot_tw_end).unsqueeze(-1),
             ),
             dim=-1,
         )

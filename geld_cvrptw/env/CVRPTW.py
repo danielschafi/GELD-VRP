@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import torch
 from geld_cvrptw.data.loaders import load_cvrptw_data_with_labels, TOUR_PAD_VALUE
-from geld_cvrptw.data.augmentations import apply_rotation
+from geld_cvrptw.data.augmentations import apply_random_rotation
 
 
 @dataclass
@@ -164,7 +164,7 @@ class CVRPTWEnv:
 
         if train:
             rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
-            self.batch_coords = apply_rotation(self.batch_coords, rotation_id)
+            self.batch_coords = apply_random_rotation(self.batch_coords, rotation_id)
 
         self.sync_batch_to_device()
 
@@ -320,6 +320,52 @@ class CVRPTWEnv:
             > self.batch_tw_end[:, 0:1] + round_error_tol
         )
         dynamic_state.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
+
+    def is_tour_feasible(
+        self,
+        tour: torch.Tensor,
+        require_complete: bool = True,
+    ) -> torch.Tensor:
+        """
+        Replay a decoded tour and check that every step was feasible.
+
+        At each position, the next node must be allowed by the environment's
+        visit, capacity, and time-window masks (same rules as during decoding).
+        When ``require_complete`` is True, every customer must be served by the
+        end of the tour.
+
+        Args:
+            tour: Node-index tour, shape ``(batch, steps)``. Padded tail uses
+                ``TOUR_PAD_VALUE`` (-1).
+            require_complete: If True, also require all customers to be visited.
+
+        Returns:
+            Boolean tensor of shape ``(batch,)`` — True when the tour is fully
+            feasible (and complete when requested).
+        """
+        _, dynamic_state = self.reset()
+        batch_size = tour.size(0)
+        feasible = torch.ones(batch_size, dtype=torch.bool, device=self.device)
+        tour_lengths = (tour != TOUR_PAD_VALUE).sum(dim=1)
+        max_steps = int(tour_lengths.max().item()) if tour_lengths.numel() > 0 else 0
+
+        sample_idx = torch.arange(batch_size, device=self.device)
+        for step in range(max_steps):
+            active = (step < tour_lengths) & feasible
+            if not active.any():
+                break
+
+            next_node = tour[:, step].long()
+            allowed = dynamic_state.ninf_mask[sample_idx, next_node] != float("-inf")
+            feasible = feasible & torch.where(active, allowed, torch.ones_like(feasible))
+
+            dynamic_state = self.step(next_node, next_node, dynamic_state)
+
+        if require_complete:
+            customers_served = (dynamic_state.visited_ninf_flag[:, 1:] == float("-inf")).all(dim=-1)
+            feasible = feasible & customers_served
+
+        return feasible
 
     def compute_tour_length(
         self,
