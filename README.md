@@ -195,7 +195,7 @@ The CVRPTW environment draws on ideas from the [MVMoE VRPTW environment](https:/
 
 ### Citation
 
-If you use GELD, please cite:
+The original GELD paper
 
 ```bibtex
 @ARTICLE{Xiao2025,
