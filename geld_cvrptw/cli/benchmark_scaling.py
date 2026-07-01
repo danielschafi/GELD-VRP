@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "benchmark_scaling", "filename": "log.txt"})
+    create_logger(log_file={"prefix": "eval", "desc": "benchmark_scaling", "filename": "log.txt"})
     seed_everything(args.seed)
 
     benchmark_params = default_scaling_benchmark_params(
@@ -92,6 +92,10 @@ def main() -> None:
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
         wandb_config={"benchmark_params": benchmark_params},
+        run_params={
+            "benchmark_params": benchmark_params,
+            "cli_args": vars(args),
+        },
     )
 
     summary = ScalingBenchmark(benchmark_params, tracker=tracker).run()

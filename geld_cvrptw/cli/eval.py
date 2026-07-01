@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "eval_cvrptw", "filename": "log.txt"})
+    create_logger(log_file={"prefix": "eval", "desc": "cvrptw", "filename": "log.txt"})
     seed_everything(2024)
 
     eval_params = default_cvrptw_eval_params(use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device)
@@ -108,6 +108,11 @@ def main() -> None:
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
         wandb_config={"eval_params": eval_params},
+        run_params={
+            "benchmark": args.benchmark,
+            "eval_params": eval_params,
+            "cli_args": vars(args),
+        },
     )
 
     evaluator = CvrptwEvaluator(eval_params, tracker=tracker)

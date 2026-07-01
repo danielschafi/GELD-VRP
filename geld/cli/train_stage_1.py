@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     """Run stage-1 supervised learning on small-scale TSP instances."""
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "train_stage_1", "filename": "log.txt"})
+    create_logger(log_file={"prefix": "train", "desc": "stage_1", "filename": "log.txt"})
 
     env_params = default_env_params(mode="train")
     model_params = default_model_params(mode="train")
@@ -70,6 +70,13 @@ def main():
             "model_params": model_params,
             "optimizer_params": optimizer_params,
             "trainer_params": trainer_params,
+        },
+        run_params={
+            "env_params": env_params,
+            "model_params": model_params,
+            "optimizer_params": optimizer_params,
+            "trainer_params": trainer_params,
+            "cli_args": vars(args),
         },
     )
     trainer = TrainingStage1Trainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)

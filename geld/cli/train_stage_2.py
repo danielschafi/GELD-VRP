@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     """Run stage-2 self-improvement learning with BS/PRC pseudo-labels."""
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "train_stage2", "filename": "log.txt"})
+    create_logger(log_file={"prefix": "train", "desc": "stage_2", "filename": "log.txt"})
     seed_everything(2024)
 
     env_params = default_env_params(mode="train")
@@ -98,6 +98,13 @@ def main():
             "model_params": model_params,
             "optimizer_params": optimizer_params,
             "trainer_params": trainer_params,
+        },
+        run_params={
+            "env_params": env_params,
+            "model_params": model_params,
+            "optimizer_params": optimizer_params,
+            "trainer_params": trainer_params,
+            "cli_args": vars(args),
         },
     )
     trainer = CurriculumTrainer(env_params, model_params, optimizer_params, trainer_params, tracker=tracker)

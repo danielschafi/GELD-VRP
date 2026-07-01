@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 METRICS_CSV = "metrics.csv"
 METRICS_JSON = "metrics.json"
+RUN_PARAMS_JSON = "run_params.json"
 EVAL_INSTANCES_CSV = "eval_instances.csv"
 EVAL_SUMMARY_JSON = "eval_summary.json"
 EVAL_SYNTHETIC_SUMMARY_CSV = "eval_synthetic_summary.csv"
@@ -133,6 +134,16 @@ def save_scaling_time_plot(summary: ScalingSummary, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def save_run_params(path: Path, run_type: str, params: dict[str, Any]) -> None:
+    """Write run configuration to JSON for reproducibility."""
+    payload = {"run_type": run_type, **params}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as json_file:
+        json.dump(payload, json_file, indent=2)
+    logger.info("Run parameters saved to %s", path)
+    logger.info("Run parameters:\n%s", json.dumps(payload, indent=2))
 
 
 def save_metrics_csv(result_log: LogData, path: Path) -> None:
@@ -269,11 +280,15 @@ class ExperimentTracker:
         wandb_project: str = "geld",
         wandb_run_name: str | None = None,
         wandb_config: dict[str, Any] | None = None,
+        run_params: dict[str, Any] | None = None,
     ):
         self.result_folder = Path(result_folder)
         self.run_type = run_type
         self.wandb_enabled = wandb_enabled
         self._wandb_run = None
+
+        if run_params is not None:
+            self.save_run_params(run_params)
 
         if wandb_enabled:
             try:
@@ -287,6 +302,10 @@ class ExperimentTracker:
                 config=wandb_config or {},
                 dir=str(self.result_folder),
             )
+
+    def save_run_params(self, params: dict[str, Any]) -> None:
+        """Persist run configuration alongside metrics artifacts."""
+        save_run_params(self.result_folder / RUN_PARAMS_JSON, self.run_type, params)
 
     def log_epoch(self, metrics: dict[str, float], step: int | None = None) -> None:
         """Log one epoch of scalar metrics to wandb when enabled."""

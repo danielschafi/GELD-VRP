@@ -14,12 +14,25 @@ from geld_cvrptw.utils.metrics import LogData
 _result_folder: Path | None = None
 
 
-def get_result_folder() -> Path:
+def _build_result_folder_name(
+    prefix: str | None = None,
+    desc: str | None = None,
+) -> str:
+    process_start_time = datetime.now(pytz.timezone("Europe/Zurich"))
+    folder_name = process_start_time.strftime("%Y%m%d_%H%M%S")
+    if prefix:
+        folder_name = f"{prefix}_{folder_name}"
+    if desc:
+        folder_name = f"{folder_name}_{desc}"
+    return folder_name
+
+
+def get_result_folder(prefix: str | None = None, desc: str | None = None) -> Path:
     """Return timestamped result directory, creating it on first access."""
     global _result_folder
     if _result_folder is None:
-        process_start_time = datetime.now(pytz.timezone("Europe/Zurich"))
-        _result_folder = project_root() / "result" / process_start_time.strftime("%Y%m%d_%H%M%S")
+        folder_name = _build_result_folder_name(prefix=prefix, desc=desc)
+        _result_folder = project_root() / "result" / folder_name
     return _result_folder
 
 
@@ -33,11 +46,18 @@ def create_logger(log_file: dict | None = None, **kwargs):
     """Configure root logger and result directory."""
     if log_file is None:
         log_file = kwargs.get("log_file", {})
-    filepath = log_file.get("filepath", get_result_folder())
-    if "desc" in log_file:
-        filepath = Path(str(filepath).format(desc="_" + log_file["desc"]))
+    filepath = log_file.get("filepath")
+    if filepath is None:
+        filepath = get_result_folder(
+            prefix=log_file.get("prefix"),
+            desc=log_file.get("desc"),
+        )
     else:
-        filepath = Path(str(filepath).format(desc=""))
+        filepath = Path(filepath)
+        if "desc" in log_file:
+            filepath = Path(str(filepath).format(desc="_" + log_file["desc"]))
+        else:
+            filepath = Path(str(filepath).format(desc=""))
     set_result_folder(filepath)
     filename = filepath / log_file.get("filename", "log.txt")
     filename.parent.mkdir(parents=True, exist_ok=True)

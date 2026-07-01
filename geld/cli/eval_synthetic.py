@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     """Evaluate GELD on synthetic TSP-n benchmarks (four distributions)."""
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "eval_synthetic", "filename": "log.txt"})
+    create_logger(log_file={"prefix": "eval", "desc": "synthetic", "filename": "log.txt"})
     seed_everything(2024)
 
     env_params = default_env_params(mode="test", use_subpath_augmentation=False)
@@ -74,6 +74,14 @@ def main():
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
         wandb_config={"eval_params": eval_params},
+        run_params={
+            "env_params": env_params,
+            "model_params": model_params,
+            "eval_params": eval_params,
+            "distributions": distributions,
+            "sizes": sizes,
+            "cli_args": vars(args),
+        },
     )
 
     for distribution in distributions:

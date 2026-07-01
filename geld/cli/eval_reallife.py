@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     """Evaluate GELD on real-world instances or run PRC post-processing."""
     args = build_parser().parse_args()
-    create_logger(log_file={"desc": "eval_tsplib", "filename": "log.txt"})
+    create_logger(log_file={"prefix": "eval", "desc": "tsplib", "filename": "log.txt"})
     seed_everything(2024)
 
     env_params = default_env_params(mode="test", use_subpath_augmentation=False)
@@ -75,6 +75,13 @@ def main():
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
         wandb_config={"eval_params": eval_params, "mode": mode.value},
+        run_params={
+            "env_params": env_params,
+            "model_params": model_params,
+            "eval_params": eval_params,
+            "mode": mode.value,
+            "cli_args": vars(args),
+        },
     )
     evaluator = InferenceEvaluator(env_params, model_params, eval_params, mode=mode, tracker=tracker)
 
