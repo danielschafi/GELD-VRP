@@ -5,7 +5,6 @@ from __future__ import annotations
 import torch
 
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv, DynamicState
-from geld_cvrptw.inference.decoders.bootstrap import apply_bootstrap
 from geld_cvrptw.inference.types import Decoder, SolveResult
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
 
@@ -48,14 +47,12 @@ class BeamSearchDecoder(Decoder):
     """
     def __init__(
         self,
-        bootstrap_start_node: int = 1,
         max_steps_factor: int = 4,
         beam_size: int = 16,
     ):
         """
         we need two 
         """
-        self.bootstrap_start_node = bootstrap_start_node
         # because of return to depot trips we need more steps than tour length. this is for safety only we stop if all are done
         self.max_steps_factor = max_steps_factor
         self.beam_size = beam_size
@@ -64,13 +61,10 @@ class BeamSearchDecoder(Decoder):
     def decode(self, model: GeldCvrptwModel, env: CVRPTWEnv) -> SolveResult:
         static_state, dynamic_state = env.reset()
         model.embed_static_state_once(static_state)
-        dynamic_state = apply_bootstrap(env, dynamic_state, start_node=self.bootstrap_start_node)
-
 
         # Initialize state
         problem_size = static_state.node_coords.size(1)
         batch_size = static_state.depot_coords.size(0)
-        intermediate_size = batch_size * self.beam_size
 
         # For each beam we need a separate dynamic State
         beam_dynamic_states = [dynamic_state.clone()  for _ in range(self.beam_size)] # (beamSize)
@@ -111,7 +105,7 @@ class BeamSearchDecoder(Decoder):
                 # With the correct state, make a step in the env
                 new_state = env.step(next_nodes, next_nodes, parent_state)
                 new_beam_dynamic_states.append(new_state)
-            
+
             beam_dynamic_states = new_beam_dynamic_states
             beam_scores = new_scores
             is_first_expansion = False
@@ -121,12 +115,12 @@ class BeamSearchDecoder(Decoder):
 
         # Get the tour with the best tour length
         lengths = torch.stack(
-            [env.compute_tour_length(env.batch_coords, state.model_tour) for state in beam_dynamic_states],
+            [env.compute_decoded_tour_length(env.batch_coords, state.model_tour) for state in beam_dynamic_states],
             dim=1,
-        )  # (batch, beam)
+        )
         best_beam = lengths.argmin(dim=1)
         batch_idx = torch.arange(batch_size, device=env.device)
         tours = torch.stack([state.model_tour for state in beam_dynamic_states], dim=1)
         best_tour = tours[batch_idx, best_beam]
-        
+
         return SolveResult(tour=best_tour, length_normalized=lengths[batch_idx, best_beam])

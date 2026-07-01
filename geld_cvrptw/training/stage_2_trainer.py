@@ -1,5 +1,5 @@
 """
-class that runs the stage 2 training procedure withself improvement learning.
+class that runs the stage 2 training procedure with supervised learning labels.
 """
 
 from logging import getLogger
@@ -8,7 +8,6 @@ import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
-from geld_cvrptw.inference.pipeline import InferencePipeline, build_pipeline
 from geld_cvrptw.utils.experiment_tracker import ExperimentTracker, should_log_batch
 from geld_cvrptw.utils.metrics import AverageMeter, LogData, TimeEstimator
 from geld_cvrptw.utils.logging import (
@@ -25,7 +24,7 @@ from geld_cvrptw.model.helpers import teacher_action_prob, apply_feasibility_mas
 
 
 class Stage2Trainer:
-    """Stage 2 SIL trainer. """
+    """Stage 1 trainer. Trains on small instances (100 customers)"""
 
     def __init__(
         self,
@@ -62,8 +61,6 @@ class Stage2Trainer:
         self.optimizer = Adam(self.model.parameters(), **self.optimizer_params["optimizer"])
         self.scheduler = MultiStepLR(self.optimizer, **self.optimizer_params["scheduler"])
 
-
-        self.solver: InferencePipeline = build_pipeline(model_params) # TODO: Corect params, beam search decoding  
         # Training restart / continue handling
         self.start_epoch = 1
         if self.trainer_params.get("model_load", {}).get("enable", False):
@@ -73,15 +70,11 @@ class Stage2Trainer:
         self.time_estimator = TimeEstimator()
 
     def run_training(self):
-        """Run stage 2 supervised training"""
+        """Run stage 1 supervised training"""
 
         # Load Train Data into memory.
         self.env.load_all_data()
         self.env.set_device(self.device)
-
-        problem_size_init = self.trainer_params["problem_size_init"]
-        problem_size_max = self.trainer_params["problem_size_max"]
-
 
         for epoch in range(self.start_epoch, self.trainer_params["epochs"] + 1):
             train_reference_length, train_predicted_length, train_loss, learning_rate = self._train_one_epoch(epoch)
@@ -162,45 +155,36 @@ class Stage2Trainer:
         label_tour = static_state.label_tour
         tour_lengths = (label_tour != TOUR_PAD_VALUE).sum(dim=1)
 
-        current_step = 0
+        current_step = 1
         while (current_step < tour_lengths).any():
             active = current_step < tour_lengths
+                            
+            raw_probs = self.model(dynamic_state, mask_feasibility=False)
+            probs = apply_feasibility_mask(raw_probs, dynamic_state.ninf_mask)
+            
+            teacher_node = label_tour[:, current_step]
+            teacher_node = torch.where(active, teacher_node, label_tour[:, 0])
+            predicted_node = probs.argmax(dim=1)
+            predicted_node = torch.where(active, predicted_node, label_tour[:, 0])
+            step_prob = teacher_action_prob(raw_probs, teacher_node).unsqueeze(1)
+            step_prob = torch.where(active.unsqueeze(1), step_prob, torch.ones_like(step_prob))
 
-            if current_step == 0:
-                # append last in cyclic (this is a node before return to depot)
-                batch_idx = torch.arange(batch_size, device=self.device)
-                last_idx = tour_lengths - 1
-                teacher_node = label_tour[batch_idx, last_idx]
-                predicted_node = teacher_node
-                step_prob = torch.ones(batch_size, 1, device=self.device)
-            elif current_step == 1:
-                # append depot
-                teacher_node = label_tour[:, 0]
-                predicted_node = label_tour[:, 0]
-                step_prob = torch.ones(batch_size, 1, device=self.device)
-            else:
-                raw_probs = self.model(dynamic_state, mask_feasibility=False)
-                probs = apply_feasibility_mask(raw_probs, dynamic_state.ninf_mask)
-                teacher_node = label_tour[:, current_step - 1]
-                teacher_node = torch.where(active, teacher_node, label_tour[:, 0])
-                predicted_node = probs.argmax(dim=1)
-                predicted_node = torch.where(active, predicted_node, label_tour[:, 0])
-                step_prob = teacher_action_prob(raw_probs, teacher_node).unsqueeze(1)
-                step_prob = torch.where(active.unsqueeze(1), step_prob, torch.ones_like(step_prob))
-
-                # Negative log-likelihood of the label action under the model distribution.
-                loss_mean = -step_prob[active].type(torch.float64).log().mean()
-                self.model.zero_grad()
-                loss_mean.backward()
-                self.optimizer.step()
+            # Negative log-likelihood of the label action under the model distribution.
+            loss_mean = -step_prob[active].type(torch.float64).log().mean()
+            self.model.zero_grad()
+            loss_mean.backward()
+            self.optimizer.step()
 
             dynamic_state = self.env.step(teacher_node, predicted_node, dynamic_state)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
             current_step += 1
 
         reference_length = self.env.compute_tour_length(self.env.batch_coords, static_state.label_tour).mean().item()
+        # model_tour is label[1:]; prepend depot so length includes the first leg and matches label tour_lengths.
+        depot_column = torch.zeros(batch_size, 1, dtype=torch.long, device=self.device)
+        predicted_tour = torch.cat((depot_column, dynamic_state.model_tour), dim=1) # include depot to first node
         predicted_length = (
-            self.env.compute_tour_length(self.env.batch_coords, dynamic_state.model_tour, tour_lengths=tour_lengths)
+            self.env.compute_tour_length(self.env.batch_coords, predicted_tour, tour_lengths=tour_lengths)
             .mean()
             .item()
         )

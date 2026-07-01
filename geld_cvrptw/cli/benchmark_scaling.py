@@ -53,7 +53,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override adaptive batch size per size bucket",
     )
     parser.add_argument("--beam-size", type=int, default=defaults["decoder"]["beam_size"])
-    parser.add_argument("--bootstrap-start-node", type=int, default=defaults["decoder"]["bootstrap_start_node"])
     parser.add_argument("--seed", type=int, default=defaults["seed"])
     parser.add_argument("--alpha", type=float, default=defaults["alpha"], help="TW tightness for generation")
     parser.add_argument("--cuda-device", type=int, default=0)
@@ -82,7 +81,6 @@ def main() -> None:
     benchmark_params["batch_size"] = args.batch_size
     benchmark_params["seed"] = args.seed
     benchmark_params["alpha"] = args.alpha
-    benchmark_params["decoder"]["bootstrap_start_node"] = args.bootstrap_start_node
     benchmark_params["decoder"]["beam_size"] = args.beam_size
 
     tracker = ExperimentTracker(

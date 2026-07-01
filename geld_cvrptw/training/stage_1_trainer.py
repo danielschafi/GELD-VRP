@@ -155,45 +155,52 @@ class Stage1Trainer:
         label_tour = static_state.label_tour
         tour_lengths = (label_tour != TOUR_PAD_VALUE).sum(dim=1)
 
-        current_step = 0
+        current_step = 1
         while (current_step < tour_lengths).any():
             active = current_step < tour_lengths
 
-            if current_step == 0:
-                # append last in cyclic (this is a node before return to depot)
-                batch_idx = torch.arange(batch_size, device=self.device)
-                last_idx = tour_lengths - 1
-                teacher_node = label_tour[batch_idx, last_idx]
-                predicted_node = teacher_node
-                step_prob = torch.ones(batch_size, 1, device=self.device)
-            elif current_step == 1:
-                # append depot
-                teacher_node = label_tour[:, 0]
-                predicted_node = label_tour[:, 0]
-                step_prob = torch.ones(batch_size, 1, device=self.device)
-            else:
-                raw_probs = self.model(dynamic_state, mask_feasibility=False)
-                probs = apply_feasibility_mask(raw_probs, dynamic_state.ninf_mask)
-                teacher_node = label_tour[:, current_step - 1]
-                teacher_node = torch.where(active, teacher_node, label_tour[:, 0])
-                predicted_node = probs.argmax(dim=1)
-                predicted_node = torch.where(active, predicted_node, label_tour[:, 0])
-                step_prob = teacher_action_prob(raw_probs, teacher_node).unsqueeze(1)
-                step_prob = torch.where(active.unsqueeze(1), step_prob, torch.ones_like(step_prob))
 
-                # Negative log-likelihood of the label action under the model distribution.
-                loss_mean = -step_prob[active].type(torch.float64).log().mean()
-                self.model.zero_grad()
-                loss_mean.backward()
-                self.optimizer.step()
+            # if current_step == 0:
+            #     # append last in cyclic (this is a node before return to depot)
+            #     batch_idx = torch.arange(batch_size, device=self.device)
+            #     last_idx = tour_lengths - 1
+            #     teacher_node = label_tour[batch_idx, last_idx]
+            #     predicted_node = teacher_node
+            #     step_prob = torch.ones(batch_size, 1, device=self.device)
+            # elif current_step == 1:
+            #     # append depot
+            #     teacher_node = label_tour[:, 0]
+            #     predicted_node = label_tour[:, 0]
+            #     step_prob = torch.ones(batch_size, 1, device=self.device)
+            # else:
+
+                
+            raw_probs = self.model(dynamic_state, mask_feasibility=False)
+            probs = apply_feasibility_mask(raw_probs, dynamic_state.ninf_mask)
+            
+            teacher_node = label_tour[:, current_step]
+            teacher_node = torch.where(active, teacher_node, label_tour[:, 0])
+            predicted_node = probs.argmax(dim=1)
+            predicted_node = torch.where(active, predicted_node, label_tour[:, 0])
+            step_prob = teacher_action_prob(raw_probs, teacher_node).unsqueeze(1)
+            step_prob = torch.where(active.unsqueeze(1), step_prob, torch.ones_like(step_prob))
+
+            # Negative log-likelihood of the label action under the model distribution.
+            loss_mean = -step_prob[active].type(torch.float64).log().mean()
+            self.model.zero_grad()
+            loss_mean.backward()
+            self.optimizer.step()
 
             dynamic_state = self.env.step(teacher_node, predicted_node, dynamic_state)
             step_log_probs = torch.cat((step_log_probs, step_prob), dim=1)
             current_step += 1
 
         reference_length = self.env.compute_tour_length(self.env.batch_coords, static_state.label_tour).mean().item()
+        # model_tour is label[1:]; prepend depot so length includes the first leg and matches label tour_lengths.
+        depot_column = torch.zeros(batch_size, 1, dtype=torch.long, device=self.device)
+        predicted_tour = torch.cat((depot_column, dynamic_state.model_tour), dim=1) # include depot to first node
         predicted_length = (
-            self.env.compute_tour_length(self.env.batch_coords, dynamic_state.model_tour, tour_lengths=tour_lengths)
+            self.env.compute_tour_length(self.env.batch_coords, predicted_tour, tour_lengths=tour_lengths)
             .mean()
             .item()
         )

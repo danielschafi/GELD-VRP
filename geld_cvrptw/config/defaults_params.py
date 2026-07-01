@@ -131,7 +131,6 @@ def default_cvrptw_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) 
         },
         "decoder": {
             "name": "beam_search",
-            "bootstrap_start_node": 1,
             "beam_size": 16,
             "max_steps_factor": 4,
         },
@@ -161,7 +160,6 @@ def default_scaling_benchmark_params(use_cuda: bool = True, cuda_device_num: int
         "alpha": 1.0,
         "decoder": {
             "name": "beam_search",
-            "bootstrap_start_node": 1,
             "beam_size": 16,
             "max_steps_factor": 4,
         },

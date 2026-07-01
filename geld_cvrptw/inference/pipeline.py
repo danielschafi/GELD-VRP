@@ -77,12 +77,10 @@ def build_pipeline(eval_params: dict) -> InferencePipeline:
     """Construct an inference pipeline from evaluation config."""
     decoder_cfg = eval_params["decoder"]
     decoder_name = decoder_cfg["name"]
-    bootstrap_start_node = decoder_cfg["bootstrap_start_node"]
     if decoder_name == "greedy":
-        decoder = GreedyDecoder(bootstrap_start_node=bootstrap_start_node)
+        decoder = GreedyDecoder(max_steps_factor=decoder_cfg.get("max_steps_factor", 4))
     elif decoder_name == "beam_search":
         decoder = BeamSearchDecoder(
-            bootstrap_start_node=bootstrap_start_node,
             max_steps_factor=decoder_cfg.get("max_steps_factor", 4),
             beam_size=decoder_cfg.get("beam_size", 16),
         )

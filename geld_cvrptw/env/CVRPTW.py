@@ -173,22 +173,31 @@ class CVRPTWEnv:
         if batch_size is not None:
             self.batch_size = batch_size
 
+        # Start at depot, manually set depot as infeasible for next step in both masks
+        visited_ninf_flag = torch.zeros(self.batch_size, self.num_nodes, device=self.device)
+        visited_ninf_flag[:,0] = float("-inf")
+
         static_state = self._build_static_state()
         dynamic_state = DynamicState(
             num_completed_steps=0,
-            current_node_idx=None,
+            current_node_idx=torch.zeros(self.batch_size, dtype=torch.long, device=self.device), # start at depot
             current_node_coord=self.batch_coords[:, 0, :],
             # The t-1 nodes based on which the decoder will predict the t-th node. tracks tour under construction
             constructed_tour=torch.zeros((self.batch_size, 0), dtype=torch.long, device=self.device),
             # Training: Nodes that have been predicted by argmax over model pred.
             model_tour=torch.zeros((self.batch_size, 0), dtype=torch.long, device=self.device),
-            ninf_mask=torch.zeros(self.batch_size, self.num_nodes, device=self.device),
-            visited_ninf_flag=torch.zeros(self.batch_size, self.num_nodes, device=self.device),
+            ninf_mask=visited_ninf_flag.clone(),
+            visited_ninf_flag=visited_ninf_flag,
             remaining_capacity=torch.ones(self.batch_size, device=self.device),
             current_time=torch.zeros(self.batch_size, device=self.device),
             length=torch.zeros(self.batch_size, device=self.device),
             done=torch.zeros(self.batch_size, dtype=torch.bool, device=self.device),
         )
+
+        # Make sure constraints are enforced
+        self._apply_capacity_constraint(dynamic_state)
+        self._apply_time_window_constraint(dynamic_state)
+        
         return static_state, dynamic_state
 
     def step(
@@ -469,6 +478,12 @@ class CVRPTWEnv:
 
         valid_segments = (step_idx[None, :] + 1) < tour_lengths[:, None]
         return (segment_lengths * valid_segments).sum(dim=1)
+
+    def compute_decoded_tour_length(self, coords: torch.Tensor, model_tour: torch.Tensor) -> torch.Tensor:
+        """Path length for decoded tours that omit the implicit start at depot."""
+        batch_size = model_tour.size(0)
+        depot_column = torch.zeros(batch_size, 1, dtype=torch.long, device=model_tour.device)
+        return self.compute_tour_length(coords, torch.cat((depot_column, model_tour), dim=1))
 
     # COMPUTE DEVICE MANAGEMENT
 
