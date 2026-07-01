@@ -42,6 +42,34 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bootstrap-start-node", type=int, default=defaults["decoder"]["bootstrap_start_node"])
     parser.add_argument("--no-beam", action="store_true", help="Use greedy decoding instead of beam search")
     parser.add_argument("--beam-size", type=int, default=defaults["decoder"]["beam_size"])
+    parser.add_argument(
+        "--no-rc",
+        action="store_true",
+        help="Disable reconstruction post-processing after decoding",
+    )
+    parser.add_argument(
+        "--rc-iterations",
+        type=int,
+        default=defaults["reconstruction"]["num_iterations"],
+        help="Number of reconstruction iterations per instance",
+    )
+    parser.add_argument(
+        "--rc-min-window-length",
+        type=int,
+        default=defaults["reconstruction"]["min_window_length"],
+        help="Minimum number of tour positions per repair window",
+    )
+    parser.add_argument(
+        "--rc-min-window-count",
+        type=int,
+        default=defaults["reconstruction"]["min_window_count"],
+        help="Minimum number of parallel repair windows per iteration",
+    )
+    parser.add_argument(
+        "--rc-diversify-coords",
+        action="store_true",
+        help="Apply random coordinate rotations during reconstruction (slower)",
+    )
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--wandb", action="store_true")
@@ -65,6 +93,13 @@ def main() -> None:
     eval_params["decoder"]["bootstrap_start_node"] = args.bootstrap_start_node
     eval_params["decoder"]["name"] = "greedy" if args.no_beam else "beam_search"
     eval_params["decoder"]["beam_size"] = args.beam_size
+    eval_params["reconstruction"] = {
+        "enabled": not args.no_rc,
+        "num_iterations": args.rc_iterations,
+        "min_window_length": args.rc_min_window_length,
+        "min_window_count": args.rc_min_window_count,
+        "diversify_coords": args.rc_diversify_coords,
+    }
 
     tracker = ExperimentTracker(
         get_result_folder(),

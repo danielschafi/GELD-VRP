@@ -116,7 +116,7 @@ def default_cvrptw_env_params() -> dict:
 
 
 def default_cvrptw_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
-    """CVRPTW evaluation defaults (beam search decoder, no post-processors)."""
+    """CVRPTW evaluation defaults (beam search decoder, optional reconstruction)."""
     return {
         "use_cuda": use_cuda,
         "cuda_device_num": cuda_device_num,
@@ -135,5 +135,41 @@ def default_cvrptw_eval_params(use_cuda: bool = True, cuda_device_num: int = 0) 
             "beam_size": 16,
             "max_steps_factor": 4,
         },
-        "postprocessors": [],
+        "reconstruction": {
+            "enabled": True,
+            "num_iterations": 100,
+            "min_window_length": 4,
+            "min_window_count": 2,
+            "diversify_coords": False,
+        },
+    }
+
+
+def default_scaling_benchmark_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
+    """Defaults for synthetic beam-search scaling benchmark (decode-only, no RC)."""
+    return {
+        "use_cuda": use_cuda,
+        "cuda_device_num": cuda_device_num,
+        "model_load": {
+            "path": str(project_root() / "result" / "pre_trained_model"),
+            "epoch": 49,
+        },
+        "sizes": [100, 200, 500, 1000, 2000, 5000],
+        "episodes": None,
+        "batch_size": None,
+        "seed": 2024,
+        "alpha": 1.0,
+        "decoder": {
+            "name": "beam_search",
+            "bootstrap_start_node": 1,
+            "beam_size": 16,
+            "max_steps_factor": 4,
+        },
+        "reconstruction": {
+            "enabled": False,
+            "num_iterations": 100,
+            "min_window_length": 4,
+            "min_window_count": 2,
+            "diversify_coords": False,
+        },
     }

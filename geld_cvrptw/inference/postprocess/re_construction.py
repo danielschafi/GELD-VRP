@@ -106,7 +106,7 @@ class ReConstruction(PostProcessor):
         """
         origin_coords = env.batch_coords
         if self.diversify_coords:
-            rotation_id = self.diversify_inputs()
+            rotation_id = self.get_random_rotation_id()
             env.batch_coords = (
                 apply_random_rotation(origin_coords, rotation_id) if rotation_id != 0 else origin_coords
             )
@@ -139,7 +139,7 @@ class ReConstruction(PostProcessor):
             model.embed_static_state_once(env._build_static_state())
         return tour, schedule
 
-    def diversify_inputs(self) -> int:
+    def get_random_rotation_id(self) -> int:
         """
         Pick a coordinate rotation id for this iteration.
 
@@ -221,26 +221,8 @@ class ReConstruction(PostProcessor):
 
     def build_tour_schedule(self, env: CVRPTWEnv, tour: torch.Tensor) -> RollingTourState:
         """Record depart time and remaining capacity after every served tour position."""
-        batch_size = tour.size(0)
-        tour_len = tour.size(1)
-        device = tour.device
-
-        depart_time = torch.zeros(batch_size, tour_len, device=device)
-        capacity_after = torch.zeros(batch_size, tour_len, device=device)
-
-        _, dynamic_state = env.reset()
         tour_lengths = self._tour_step_count_per_row(tour)
-
-        for step in range(tour_len):
-            active = step < tour_lengths
-            if not active.any():
-                break
-
-            next_node = tour[:, step]
-            dynamic_state = env.step(next_node, next_node, dynamic_state)
-            depart_time[:, step] = dynamic_state.current_time
-            capacity_after[:, step] = dynamic_state.remaining_capacity
-
+        depart_time, capacity_after = env.replay_tour_schedule(tour, tour_lengths)
         return RollingTourState(depart_time=depart_time, capacity_after=capacity_after)
 
     def build_warm_start_states(
@@ -417,30 +399,16 @@ class ReConstruction(PostProcessor):
         from_idx: int,
     ) -> RollingTourState:
         """Recompute depart times and capacities from ``from_idx`` forward."""
-        batch_size = tour.size(0)
-        tour_len = tour.size(1)
-        device = tour.device
-
+        tour_lengths = self._tour_step_count_per_row(tour)
         depart_time = schedule.depart_time.clone()
         capacity_after = schedule.capacity_after.clone()
-        tour_lengths = self._tour_step_count_per_row(tour)
-
-        _, dynamic_state = env.reset()
-        prefix_end = min(from_idx, tour_len)
-        for step in range(prefix_end):
-            active = step < tour_lengths
-            if not active.any():
-                return RollingTourState(depart_time=depart_time, capacity_after=capacity_after)
-            dynamic_state = env.step(tour[:, step], tour[:, step], dynamic_state)
-
-        for step in range(from_idx, tour_len):
-            active = step < tour_lengths
-            if not active.any():
-                break
-            dynamic_state = env.step(tour[:, step], tour[:, step], dynamic_state)
-            depart_time[:, step] = dynamic_state.current_time
-            capacity_after[:, step] = dynamic_state.remaining_capacity
-
+        env.replay_tour_schedule(
+            tour,
+            tour_lengths,
+            record_from=from_idx,
+            depart_time_out=depart_time,
+            capacity_after_out=capacity_after,
+        )
         return RollingTourState(depart_time=depart_time, capacity_after=capacity_after)
 
     def _leg_distance_sum(self, coords: torch.Tensor, nodes: torch.Tensor) -> torch.Tensor:

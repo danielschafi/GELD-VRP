@@ -1,3 +1,7 @@
+slurm_*.bash
+to-do.md
+
+
 playground/
 resources/
 .cursor/
@@ -109,6 +113,7 @@ SL_training_data/
 tools/hgs-vrptw/
 tools/hgs-vrptw-src/
 data/.hgs_cache/
+experiments/hgs_label_gap/results/
 
 # Model checkpoints outside bundled pretrained weights
 *.pt

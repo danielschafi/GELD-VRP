@@ -20,6 +20,8 @@ METRICS_JSON = "metrics.json"
 EVAL_INSTANCES_CSV = "eval_instances.csv"
 EVAL_SUMMARY_JSON = "eval_summary.json"
 EVAL_SYNTHETIC_SUMMARY_CSV = "eval_synthetic_summary.csv"
+SCALING_INSTANCES_CSV = "scaling_instances.csv"
+SCALING_SUMMARY_JSON = "scaling_summary.json"
 
 
 @dataclass
@@ -48,6 +50,89 @@ class EvalSummary:
     size: int | None = None
     distribution: str | None = None
     instances: list[EvalInstanceResult] = field(default_factory=list)
+
+
+@dataclass
+class ScalingInstanceResult:
+    """Per-instance scaling benchmark record."""
+
+    name: str
+    problem_size: int
+    decode_time_sec: float
+    tour_length: float
+
+
+@dataclass
+class ScalingSizeSummary:
+    """Aggregated timing stats for one problem size."""
+
+    problem_size: int
+    num_instances: int
+    decode_time_mean_sec: float
+    decode_time_std_sec: float
+    decode_time_p95_sec: float
+    tour_length_mean: float
+    instances_per_sec: float
+
+
+@dataclass
+class ScalingSummary:
+    """Full scaling benchmark result."""
+
+    beam_size: int
+    max_steps_factor: int
+    sizes_attempted: list[int]
+    max_successful_size: int
+    scaling_exponent: float | None
+    scaling_prefactor: float | None
+    size_summaries: list[ScalingSizeSummary] = field(default_factory=list)
+    instances: list[ScalingInstanceResult] = field(default_factory=list)
+
+
+def save_scaling_instances_csv(instances: list[ScalingInstanceResult], path: Path) -> None:
+    """Write per-instance scaling benchmark rows to CSV."""
+    if not instances:
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(asdict(instances[0]).keys())
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for instance in instances:
+            writer.writerow(asdict(instance))
+
+
+def save_scaling_summary(summary: ScalingSummary, path: Path) -> None:
+    """Write aggregated scaling benchmark summary to JSON."""
+    payload = asdict(summary)
+    payload.pop("instances", None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as json_file:
+        json.dump(payload, json_file, indent=2)
+
+
+def save_scaling_time_plot(summary: ScalingSummary, path: Path) -> None:
+    """Save log-log plot of decode time vs problem size."""
+    if not summary.size_summaries:
+        return
+
+    sizes = [item.problem_size for item in summary.size_summaries]
+    times = [item.decode_time_mean_sec for item in summary.size_summaries]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axis = plt.subplots(figsize=(8, 5))
+    axis.loglog(sizes, times, marker="o", linewidth=1.5, markersize=6)
+    axis.set_xlabel("problem size (customers)")
+    axis.set_ylabel("decode time (s / instance)")
+    title = "beam search decode scaling"
+    if summary.scaling_exponent is not None:
+        title += f" (alpha ~ {summary.scaling_exponent:.2f})"
+    axis.set_title(title)
+    axis.grid(True, alpha=0.3, which="both")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
 
 
 def save_metrics_csv(result_log: LogData, path: Path) -> None:
@@ -247,6 +332,26 @@ class ExperimentTracker:
                 log_payload["eval/distribution"] = summary.distribution
             for bucket, mean_gap in summary.bucket_means.items():
                 log_payload[f"eval/bucket_{bucket}_gap_percent"] = mean_gap
+            wandb.log(log_payload)
+
+    def save_scaling_results(self, summary: ScalingSummary) -> None:
+        """Persist scaling benchmark CSV/JSON/plot artifacts."""
+        save_scaling_instances_csv(summary.instances, self.result_folder / SCALING_INSTANCES_CSV)
+        save_scaling_summary(summary, self.result_folder / SCALING_SUMMARY_JSON)
+        save_scaling_time_plot(summary, self.result_folder / "scaling_time.png")
+
+        if self._wandb_run:
+            import wandb
+
+            log_payload: dict[str, Any] = {
+                "scaling/max_successful_size": summary.max_successful_size,
+                "scaling/scaling_exponent": summary.scaling_exponent,
+                "scaling/scaling_prefactor": summary.scaling_prefactor,
+            }
+            for size_summary in summary.size_summaries:
+                prefix = f"scaling/size_{size_summary.problem_size}"
+                log_payload[f"{prefix}/decode_time_mean_sec"] = size_summary.decode_time_mean_sec
+                log_payload[f"{prefix}/instances_per_sec"] = size_summary.instances_per_sec
             wandb.log(log_payload)
 
     def finish(self) -> None:

@@ -59,14 +59,27 @@ def sample_training_subpath(problems, solution, length_fix=False, mode="test", r
 
 
 def extract_subpath_batch(problems, solution, segment_indices, subpath_length):
-    """Extract fixed sub-solutions at given segment starts for PRC."""
+    """Extract fixed sub-solutions at given segment starts for PRC.
+    The sub-solution is sorted in ascending order of node id. The indices in the original solution are returned.
+    Using the indices in the sorted, the original solution can be reconstructed.
+
+    Args:
+        problems: (batch_size, problem_size, 2)
+        solution: (batch_size, problem_size)
+        segment_indices: (num_segments)
+        subpath_length: int
+
+    Returns:
+        sub_problems: (batch_size, subpath_length, 2)
+        indices_in_sorted: (batch_size, subpath_length)
+    """
     batch_size = problems.shape[0]
     expanded_indices = segment_indices.unsqueeze(1) + torch.arange(subpath_length)
     sub_tour = solution[:, expanded_indices]
-    sub_tour_sorted, rank = torch.sort(sub_tour, dim=-1, descending=False)
-    _, sub_tour_rank = torch.sort(rank, dim=-1, descending=False)
+    sub_tour_sorted, indices_in_original = torch.sort(sub_tour, dim=-1, descending=False)
+    _, indices_in_sorted = torch.sort(indices_in_original, dim=-1, descending=False)
     node_order, _ = sub_tour_sorted.type(torch.long).sort(dim=-1, descending=False)
     node_order = node_order.view(batch_size, -1)
     batch_indices = torch.arange(batch_size, dtype=torch.long)[:, None].expand(batch_size, node_order.shape[1])
     sub_problems = problems[batch_indices, node_order].view(batch_size, -1, subpath_length, 2)
-    return sub_problems, sub_tour_rank
+    return sub_problems, indices_in_sorted

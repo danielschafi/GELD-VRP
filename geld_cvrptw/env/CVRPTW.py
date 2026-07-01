@@ -321,6 +321,84 @@ class CVRPTWEnv:
         )
         dynamic_state.ninf_mask[return_is_out_of_depot_tw] = float("-inf")
 
+    def replay_tour_schedule(
+        self,
+        tour: torch.Tensor,
+        tour_lengths: torch.Tensor | None = None,
+        *,
+        record_from: int = 0,
+        depart_time_out: torch.Tensor | None = None,
+        capacity_after_out: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Record depart time and remaining capacity after each step.
+        Does the same rules as env.step() but witout keeping/copying some unneeded state
+
+        Args:
+            tour: Node-index tour, shape ``(batch, steps)``.
+            tour_lengths: Optional per-row active step count. Defaults to non-pad
+                positions when ``TOUR_PAD_VALUE`` (-1) is used.
+            record_from: First tour index to write into the output tensors.
+            depart_time_out: Optional pre-allocated buffer, shape ``(batch, steps)``.
+            capacity_after_out: Optional pre-allocated buffer, shape ``(batch, steps)``.
+
+        Returns:
+            ``(depart_time, capacity_after)`` tensors of shape ``(batch, steps)``.
+        """
+        batch_size, tour_len = tour.shape
+        device = tour.device
+
+        if tour_lengths is None:
+            tour_lengths = (tour != TOUR_PAD_VALUE).sum(dim=1)
+
+        if depart_time_out is None:
+            depart_time = torch.zeros(batch_size, tour_len, device=device)
+        else:
+            depart_time = depart_time_out
+
+        if capacity_after_out is None:
+            capacity_after = torch.zeros(batch_size, tour_len, device=device)
+        else:
+            capacity_after = capacity_after_out
+
+        sample_idx = torch.arange(batch_size, device=device)
+        current_node_coord = self.batch_coords[:, 0, :]
+        current_time = torch.zeros(batch_size, device=device)
+        remaining_capacity = torch.ones(batch_size, device=device)
+
+        for step in range(tour_len):
+            if not (step < tour_lengths).any():
+                break
+
+            next_node = tour[:, step]
+            at_the_depot = next_node == 0
+
+            new_coord = self.batch_coords[sample_idx, next_node]
+            added_length = (new_coord - current_node_coord).norm(p=2, dim=-1)
+            current_node_coord = new_coord
+
+            selected_demand = self.batch_demand[sample_idx, next_node]
+            remaining_capacity = remaining_capacity - selected_demand
+            remaining_capacity = torch.where(
+                at_the_depot, torch.ones_like(remaining_capacity), remaining_capacity
+            )
+
+            arrival_time = current_time + added_length / self.speed
+            earliest_possible_service_start = torch.max(
+                arrival_time, self.batch_tw_start[sample_idx, next_node]
+            )
+            current_time = (
+                earliest_possible_service_start
+                + self.batch_service_time[sample_idx, next_node]
+            )
+            current_time = torch.where(at_the_depot, torch.zeros_like(current_time), current_time)
+
+            if step >= record_from:
+                depart_time[:, step] = current_time
+                capacity_after[:, step] = remaining_capacity
+
+        return depart_time, capacity_after
+
     def is_tour_feasible(
         self,
         tour: torch.Tensor,
