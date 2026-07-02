@@ -26,15 +26,15 @@ class ReConstruction(PostProcessor):
 
     def __init__(
         self,
-        num_iterations: int = 1000,
-        min_window_length: int = 4,
-        min_window_count: int = 2,
-        diversify_coords: bool = False,
+        rc_iterations: int = 1000,
+        window_size_min: int = 4,
+        num_windows_min: int = 2,
+        augment_coords: bool = False,
     ) -> None:
-        self.num_iterations = num_iterations
-        #self.min_window_length = min_window_length
-        #self.min_window_count = min_window_count
-        #self.diversify_coords = diversify_coords
+        self.rc_iterations = rc_iterations
+        #self.window_size_min = window_size_min
+        #self.num_windows_min = num_windows_min
+        #self.augment_coords = augment_coords
         self.segment_len_min = 4
         self.batch_size = None
         self.problem_size = None
@@ -57,7 +57,7 @@ class ReConstruction(PostProcessor):
         large_instance = self.problem_size > LARGE_INSTANCE_THRESHOLD
         self.segment_len_max = self.problem_size // (4 if not large_instance else 10)
 
-        for _ in range(self.num_iterations):
+        for _ in range(self.rc_iterations):
             tour, rolling_state = self.run_one_iteration(model, env, tour, rolling_state)
 
         length = env.compute_tour_length(env.batch_coords, tour)

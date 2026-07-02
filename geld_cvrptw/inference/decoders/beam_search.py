@@ -47,14 +47,14 @@ class BeamSearchDecoder(Decoder):
     """
     def __init__(
         self,
-        max_steps_factor: int = 4,
+        horizon_factor: int = 4,
         beam_size: int = 16,
     ):
         """
         we need two 
         """
         # because of return to depot trips we need more steps than tour length. this is for safety only we stop if all are done
-        self.max_steps_factor = max_steps_factor
+        self.horizon_factor = horizon_factor
         self.beam_size = beam_size
 
     @torch.no_grad()
@@ -72,7 +72,7 @@ class BeamSearchDecoder(Decoder):
         # first step outside loop
         is_first_expansion = True
 
-        max_steps = env.num_nodes * self.max_steps_factor
+        max_steps = env.num_nodes * self.horizon_factor
         for t in range(max_steps):
             # list with all the cumulative log probs (batch, beam, nodes)
             cum_scores  = torch.full((batch_size, self.beam_size, problem_size), fill_value=float("-inf"), device=env.device)

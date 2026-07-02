@@ -65,24 +65,24 @@ class ReConstruction(PostProcessor):
 
     def __init__(
         self,
-        num_iterations: int = 1000,
-        min_window_length: int = 4,
-        min_window_count: int = 2,
-        diversify_coords: bool = False,
+        rc_iterations: int = 100,
+        window_size_min: int = 4,
+        num_windows_min: int = 2,
+        augment_coords: bool = False,
     ) -> None:
-        self.num_iterations = num_iterations
-        self.min_window_length = min_window_length
-        self.min_window_count = min_window_count
-        self.diversify_coords = diversify_coords
+        self.rc_iterations = rc_iterations
+        self.window_size_min = window_size_min
+        self.num_windows_min = num_windows_min
+        self.augment_coords = augment_coords
 
     @torch.no_grad()
     def refine(self, model: GeldCvrptwModel, env: CVRPTWEnv, result: SolveResult) -> SolveResult:
-        """Run RC for ``num_iterations`` and return the refined tour."""
+        """Run RC for ``rc_iterations`` and return the refined tour."""
         tour = result.tour.clone()
         model.embed_static_state_once(env._build_static_state())
         schedule = self.build_tour_schedule(env, tour)
 
-        for _ in range(self.num_iterations):
+        for _ in range(self.rc_iterations):
             tour, schedule = self.run_one_iteration(model, env, tour, schedule)
 
         length = env.compute_tour_length(env.batch_coords, tour)
@@ -105,7 +105,7 @@ class ReConstruction(PostProcessor):
         4. Merge windows that are shorter and still yield a feasible full tour
         """
         origin_coords = env.batch_coords
-        if self.diversify_coords:
+        if self.augment_coords:
             rotation_id = self.get_random_rotation_id()
             env.batch_coords = (
                 apply_random_rotation(origin_coords, rotation_id) if rotation_id != 0 else origin_coords
@@ -134,7 +134,7 @@ class ReConstruction(PostProcessor):
             length_after,
         )
 
-        if self.diversify_coords:
+        if self.augment_coords:
             env.batch_coords = origin_coords
             model.embed_static_state_once(env._build_static_state())
         return tour, schedule
@@ -150,16 +150,16 @@ class ReConstruction(PostProcessor):
 
     def sample_window_count(self, tour_len: int) -> int:
         """How many parallel repair windows to open this iteration."""
-        if tour_len < self.min_window_length:
+        if tour_len < self.window_size_min:
             return 1
 
-        max_by_length = tour_len // self.min_window_length
-        sample_cap = max(self.min_window_count, tour_len // 4)
+        max_by_length = tour_len // self.window_size_min
+        sample_cap = max(self.num_windows_min, tour_len // 4)
         upper = min(max_by_length, sample_cap)
-        if upper <= self.min_window_count:
+        if upper <= self.num_windows_min:
             return max(1, upper)
 
-        return int(torch.randint(low=self.min_window_count, high=upper + 1, size=[1])[0])
+        return int(torch.randint(low=self.num_windows_min, high=upper + 1, size=[1])[0])
 
     def plan_repair_windows(
         self,
@@ -175,9 +175,9 @@ class ReConstruction(PostProcessor):
             :window_count
         ]
         window_starts = (base_starts + start_offset) % max(tour_len, 1)
-        max_window_length = max(self.min_window_length, tour_len // window_count)
+        max_window_length = max(self.window_size_min, tour_len // window_count)
         window_length = int(
-            torch.randint(low=self.min_window_length, high=max_window_length + 1, size=[1])[0]
+            torch.randint(low=self.window_size_min, high=max_window_length + 1, size=[1])[0]
         )
         return RepairWindowPlan(
             window_count=window_count,

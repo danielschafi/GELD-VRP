@@ -9,10 +9,10 @@ import numpy as np
 import torch
 
 from geld_cvrptw.config.defaults_params import default_cvrptw_env_params, default_model_params
-from geld_cvrptw.data.benchmark_loaders import BenchmarkInstance, records_to_benchmark_instances
+from geld_cvrptw.data.benchmark_loaders import BenchmarkInstance, benchmark_batch_to_device, records_to_benchmark_instances
 from geld_cvrptw.data.generator import generate_instances
+from geld_cvrptw.data.loaders import iter_instance_batches
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv
-from geld_cvrptw.inference.evaluator import _load_batch_tensors
 from geld_cvrptw.inference.pipeline import InferencePipeline, build_pipeline
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
 from geld_cvrptw.utils.device import setup_device
@@ -87,8 +87,7 @@ class ScalingBenchmark:
         env_params["device"] = self.device
         self.env = CVRPTWEnv(**env_params)
 
-        model_params = default_model_params(mode="test")
-        self.model = GeldCvrptwModel(**model_params).to(self.device)
+        self.model = GeldCvrptwModel(**default_model_params(mode="test")).to(self.device)
         checkpoint_path = (
             f"{benchmark_params['model_load']['path']}/checkpoint-{benchmark_params['model_load']['epoch']}.pt"
         )
@@ -100,10 +99,10 @@ class ScalingBenchmark:
         self.time_estimator = TimeEstimator()
 
     def run(self) -> ScalingSummary:
-        sizes = list(self.benchmark_params["sizes"])
+        sizes = list(self.benchmark_params["n_customers_values"])
         decoder_cfg = self.benchmark_params["decoder"]
         beam_size = decoder_cfg["beam_size"]
-        max_steps_factor = decoder_cfg.get("max_steps_factor", 4)
+        horizon_factor = decoder_cfg.get("horizon_factor", 4)
         seed = self.benchmark_params.get("seed", 2024)
         alpha = self.benchmark_params.get("alpha", 1.0)
 
@@ -111,26 +110,29 @@ class ScalingBenchmark:
         size_summaries: list[ScalingSizeSummary] = []
         max_successful_size = 0
 
-        for problem_size in sizes:
-            episodes = self.benchmark_params.get("episodes") or default_episodes_for_size(problem_size)
-            batch_size = self.benchmark_params.get("batch_size") or default_batch_size_for_size(problem_size)
+        for n_customers in sizes:
+            num_instances = self.benchmark_params.get("num_instances") or default_episodes_for_size(n_customers)
+            decode_batch_size = (
+                self.benchmark_params.get("decode_batch_size") or default_batch_size_for_size(n_customers)
+            )
 
             self.logger.info(
-                f"Scaling benchmark: size={problem_size}, episodes={episodes}, batch_size={batch_size}"
+                f"Scaling benchmark: n_customers={n_customers}, "
+                f"num_instances={num_instances}, decode_batch_size={decode_batch_size}"
             )
 
             try:
                 size_summary, instance_results = self._run_size(
-                    problem_size=problem_size,
-                    episodes=episodes,
-                    batch_size=batch_size,
-                    seed=seed + problem_size,
+                    n_customers=n_customers,
+                    num_instances=num_instances,
+                    decode_batch_size=decode_batch_size,
+                    seed=seed + n_customers,
                     alpha=alpha,
                 )
             except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
                 if self._is_oom_error(exc):
                     self.logger.error(
-                        f"OOM or memory error at size={problem_size}: {exc}. Stopping size sweep."
+                        f"OOM or memory error at n_customers={n_customers}: {exc}. Stopping size sweep."
                     )
                     break
                 raise
@@ -140,13 +142,13 @@ class ScalingBenchmark:
 
             size_summaries.append(size_summary)
             all_instances.extend(instance_results)
-            max_successful_size = problem_size
+            max_successful_size = n_customers
 
         scaling_exponent, scaling_prefactor = fit_scaling_exponent(size_summaries)
         summary = ScalingSummary(
             beam_size=beam_size,
-            max_steps_factor=max_steps_factor,
-            sizes_attempted=sizes,
+            horizon_factor=horizon_factor,
+            n_customers_attempted=sizes,
             max_successful_size=max_successful_size,
             scaling_exponent=scaling_exponent,
             scaling_prefactor=scaling_prefactor,
@@ -167,22 +169,22 @@ class ScalingBenchmark:
     def _run_size(
         self,
         *,
-        problem_size: int,
-        episodes: int,
-        batch_size: int,
+        n_customers: int,
+        num_instances: int,
+        decode_batch_size: int,
         seed: int,
         alpha: float,
     ) -> tuple[ScalingSizeSummary, list[ScalingInstanceResult]]:
         records = generate_instances(
-            episodes,
-            problem_size=problem_size,
+            num_instances,
+            problem_size=n_customers,
             alpha=alpha,
             seed=seed,
-            batch_size=default_generation_batch_size(problem_size, episodes),
+            batch_size=default_generation_batch_size(n_customers, num_instances),
         )
         benchmark_instances = records_to_benchmark_instances(
             records,
-            name_prefix=f"scaling_n{problem_size}",
+            name_prefix=f"scaling_n{n_customers}",
         )
 
         decode_times: list[float] = []
@@ -190,11 +192,10 @@ class ScalingBenchmark:
         instance_results: list[ScalingInstanceResult] = []
 
         total = len(benchmark_instances)
-        offset = 0
+        num_processed = 0
         self.time_estimator.reset()
 
-        while offset < total:
-            batch = benchmark_instances[offset : offset + batch_size]
+        for batch in iter_instance_batches(benchmark_instances, decode_batch_size):
             per_instance_times, per_instance_lengths = self._decode_batch(batch)
             decode_times.extend(per_instance_times)
             tour_lengths.extend(per_instance_lengths)
@@ -209,10 +210,10 @@ class ScalingBenchmark:
                     )
                 )
 
-            offset += len(batch)
-            elapsed, remain = self.time_estimator.get_est_string(offset, total)
+            num_processed += len(batch)
+            elapsed, remain = self.time_estimator.get_est_string(num_processed, total)
             self.logger.info(
-                f"size={problem_size}: {offset}/{total}, Elapsed[{elapsed}], Remain[{remain}]"
+                f"n_customers={n_customers}: {num_processed}/{total}, Elapsed[{elapsed}], Remain[{remain}]"
             )
 
         decode_times_arr = np.asarray(decode_times, dtype=np.float64)
@@ -224,12 +225,12 @@ class ScalingBenchmark:
         instances_per_sec = 1.0 / mean_time if mean_time > 0 else 0.0
 
         self.logger.info(
-            f"size={problem_size}: mean decode={mean_time:.4f}s, p95={p95_time:.4f}s, "
+            f"n_customers={n_customers}: mean decode={mean_time:.4f}s, p95={p95_time:.4f}s, "
             f"throughput={instances_per_sec:.2f} inst/s"
         )
 
         size_summary = ScalingSizeSummary(
-            problem_size=problem_size,
+            problem_size=n_customers,
             num_instances=total,
             decode_time_mean_sec=mean_time,
             decode_time_std_sec=std_time,
@@ -243,8 +244,8 @@ class ScalingBenchmark:
         self,
         batch: list[BenchmarkInstance],
     ) -> tuple[list[float], list[float]]:
-        coords, demand, tw_start, tw_end, service_time = _load_batch_tensors(batch, self.device)
-        self.env.load_problem_tensors(coords, demand, tw_start, tw_end, service_time)
+        coords, demand, tw_start, tw_end, service_time = benchmark_batch_to_device(batch, self.device)
+        self.env.set_batch(coords, demand, tw_start, tw_end, service_time)
         timed_result = self.pipeline.run_timed(self.model, self.env)
 
         batch_len = len(batch)

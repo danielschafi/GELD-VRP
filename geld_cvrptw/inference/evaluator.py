@@ -12,13 +12,14 @@ import torch
 from geld_cvrptw.config.defaults_params import default_cvrptw_env_params, default_model_params
 from geld_cvrptw.data.benchmark_loaders import (
     BenchmarkInstance,
+    benchmark_batch_to_device,
     default_synthetic_paths,
     group_by_size,
-    instances_to_tensors,
     iter_homberger_instances,
     iter_solomon_instances,
     load_synthetic_pkl,
 )
+from geld_cvrptw.data.loaders import iter_instance_batches
 from geld_cvrptw.env.CVRPTW import CVRPTWEnv
 from geld_cvrptw.inference.pipeline import InferencePipeline, build_pipeline
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
@@ -38,17 +39,6 @@ def _size_bucket(num_customers: int) -> str:
     return str(num_customers)
 
 
-def _load_batch_tensors(instances: list[BenchmarkInstance], device: torch.device):
-    coords, demand, tw_start, tw_end, service_time = instances_to_tensors(instances)
-    return (
-        torch.tensor(coords, dtype=torch.float32, device=device),
-        torch.tensor(demand, dtype=torch.float32, device=device),
-        torch.tensor(tw_start, dtype=torch.float32, device=device),
-        torch.tensor(tw_end, dtype=torch.float32, device=device),
-        torch.tensor(service_time, dtype=torch.float32, device=device),
-    )
-
-
 class CvrptwEvaluator:
     """Runs CVRPTW benchmarks and reports optimality gaps."""
 
@@ -66,8 +56,7 @@ class CvrptwEvaluator:
         env_params["device"] = self.device
         self.env = CVRPTWEnv(**env_params)
 
-        model_params = default_model_params(mode="test")
-        self.model = GeldCvrptwModel(**model_params).to(self.device)
+        self.model = GeldCvrptwModel(**default_model_params(mode="test")).to(self.device)
         checkpoint_path = (
             f"{eval_params['model_load']['path']}/checkpoint-{eval_params['model_load']['epoch']}.pt"
         )
@@ -112,12 +101,11 @@ class CvrptwEvaluator:
         results: list[EvalInstanceResult] = []
 
         total = len(instances)
-        offset = 0
+        num_processed = 0
         self.time_estimator.reset()
-        while offset < total:
-            batch = instances[offset : offset + batch_size]
-            coords, demand, tw_start, tw_end, service_time = _load_batch_tensors(batch, self.device)
-            self.env.load_problem_tensors(coords, demand, tw_start, tw_end, service_time)
+        for batch in iter_instance_batches(instances, batch_size):
+            coords, demand, tw_start, tw_end, service_time = benchmark_batch_to_device(batch, self.device)
+            self.env.set_batch(coords, demand, tw_start, tw_end, service_time)
             solve_result = self.pipeline.run(self.model, self.env)
 
             predicted_lengths = (solve_result.length_normalized * torch.tensor(
@@ -146,10 +134,10 @@ class CvrptwEvaluator:
                 baseline_meter.update(baseline, 1)
                 predicted_meter.update(predicted, 1)
 
-            offset += len(batch)
-            elapsed, remain = self.time_estimator.get_est_string(offset, total)
+            num_processed += len(batch)
+            elapsed, remain = self.time_estimator.get_est_string(num_processed, total)
             self.logger.info(
-                f"{mode}: {offset}/{total}, Elapsed[{elapsed}], Remain[{remain}], "
+                f"{mode}: {num_processed}/{total}, Elapsed[{elapsed}], Remain[{remain}], "
                 f"avg gap so far: {(predicted_meter.avg - baseline_meter.avg) / baseline_meter.avg * 100:.4f}%"
             )
 
@@ -182,13 +170,13 @@ class CvrptwEvaluator:
 
     def _run_synthetic(self) -> EvalSummary:
         cfg = self.eval_params["synthetic"]
-        problem_path, solution_path = default_synthetic_paths(cfg["size"])
-        instances = load_synthetic_pkl(problem_path, solution_path, max_instances=cfg["episodes"])
+        problem_path, solution_path = default_synthetic_paths(cfg["n_customers"])
+        instances = load_synthetic_pkl(problem_path, solution_path, max_instances=cfg["num_instances"])
         return self._evaluate_instances(
             instances,
             mode=EvalBenchmark.SYNTHETIC.value,
             batch_size=cfg["batch_size"],
-            size=cfg["size"],
+            size=cfg["n_customers"],
             distribution="uniform",
         )
 

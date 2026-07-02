@@ -1,4 +1,4 @@
-"""Kicks off training stage 2 for GELD - CVRPTW. CLI entrypoint"""
+"""CLI entrypoint for stage-2 curriculum / self-improvement training."""
 
 import argparse
 import logging
@@ -20,35 +20,45 @@ def build_parser() -> argparse.ArgumentParser:
     stage_2_defaults = default_training_stage_2_params()
     parser = argparse.ArgumentParser(description="GELD stage-2 supervised training")
     parser.add_argument("--epochs", type=int, default=stage_2_defaults["epochs"])
-    parser.add_argument("--train-episodes", type=int, default=stage_2_defaults["train_episodes"])
-    parser.add_argument("--batch-size", type=int, default=stage_2_defaults["train_batch_size"])
+    parser.add_argument(
+        "--instances-per-epoch",
+        type=int,
+        default=stage_2_defaults["instances_per_epoch"],
+        help="Generated large instances per epoch",
+    )
+    parser.add_argument("--batch-size", type=int, default=stage_2_defaults["batch_size"])
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument(
-        "--stage1-checkpoint-path",
+        "--pretrained-dir",
         type=str,
         required=True,
-        help="Path to stage-1 result folder containing the pretrained checkpoint",
+        help="Stage-1 result folder containing the pretrained checkpoint",
     )
     parser.add_argument(
-        "--stage1-checkpoint-epoch",
+        "--pretrained-epoch",
         type=int,
         default=49,
         help="Stage-1 checkpoint epoch to initialize from",
     )
     parser.add_argument(
-        "--model-load-path",
+        "--resume-dir",
         type=str,
         default=None,
         help="Resume stage-2 training from checkpoint directory",
     )
-    parser.add_argument("--model-load-epoch", type=int, default=1, help="Checkpoint epoch to load when resuming")
+    parser.add_argument(
+        "--resume-epoch",
+        type=int,
+        default=1,
+        help="Checkpoint epoch to load when resuming stage 2",
+    )
     parser.add_argument(
         "--result-folder",
         type=str,
         default=None,
-        help="Override result output directory (defaults to --model-load-path when resuming)",
+        help="Override result output directory (defaults to --resume-dir when resuming)",
     )
     parser.add_argument("--wandb", action="store_true", help="Log metrics to Weights & Biases")
     parser.add_argument("--wandb-project", type=str, default="geld-vrp")
@@ -68,8 +78,8 @@ def main():
     create_logger(log_file={"prefix": "train", "desc": "stage_2", "filename": "log.txt"})
 
     result_folder = args.result_folder
-    if result_folder is None and args.model_load_path is not None:
-        result_folder = args.model_load_path
+    if result_folder is None and args.resume_dir is not None:
+        result_folder = args.resume_dir
     if result_folder is not None:
         set_result_folder(result_folder)
 
@@ -79,27 +89,27 @@ def main():
     trainer_params = default_training_stage_2_params(
         use_cuda=not args.no_cuda,
         cuda_device_num=args.cuda_device,
-        model_load_path=args.stage1_checkpoint_path,
-        model_load_epoch=args.stage1_checkpoint_epoch,
+        pretrained_dir=args.pretrained_dir,
+        pretrained_epoch=args.pretrained_epoch,
     )
 
     if args.debug:
         trainer_params["epochs"] = 2
-        trainer_params["train_episodes"] = 8
-        trainer_params["train_batch_size"] = 4
-        trainer_params["problem_size_min"] = 20
-        trainer_params["problem_size_max"] = 30
+        trainer_params["instances_per_epoch"] = 8
+        trainer_params["batch_size"] = 4
+        trainer_params["n_customers_min"] = 20
+        trainer_params["n_customers_max"] = 30
     else:
         trainer_params["epochs"] = args.epochs
-        trainer_params["train_episodes"] = args.train_episodes
-        trainer_params["train_batch_size"] = args.batch_size
+        trainer_params["instances_per_epoch"] = args.instances_per_epoch
+        trainer_params["batch_size"] = args.batch_size
     if args.batch_log_interval is not None:
         trainer_params["logging"]["batch_log_interval"] = args.batch_log_interval
-    if args.model_load_path is not None:
-        trainer_params["model_load"] = {
+    if args.resume_dir is not None:
+        trainer_params["resume_checkpoint"] = {
             "enable": True,
-            "path": args.model_load_path,
-            "epoch": args.model_load_epoch,
+            "path": args.resume_dir,
+            "epoch": args.resume_epoch,
         }
 
     logger = logging.getLogger("root")

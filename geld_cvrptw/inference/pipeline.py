@@ -63,10 +63,10 @@ def build_postprocessors(eval_params: dict) -> list[PostProcessor]:
     if reconstruction_cfg.get("enabled", False):
         postprocessors.append(
             ReConstruction(
-                num_iterations=reconstruction_cfg.get("num_iterations", 100),
-                min_window_length=reconstruction_cfg.get("min_window_length", 4),
-                min_window_count=reconstruction_cfg.get("min_window_count", 2),
-                diversify_coords=reconstruction_cfg.get("diversify_coords", False),
+                rc_iterations=reconstruction_cfg.get("rc_iterations", 100),
+                window_size_min=reconstruction_cfg.get("window_size_min", 4),
+                num_windows_min=reconstruction_cfg.get("num_windows_min", 2),
+                augment_coords=reconstruction_cfg.get("augment_coords", False),
             )
         )
 
@@ -78,10 +78,10 @@ def build_pipeline(eval_params: dict) -> InferencePipeline:
     decoder_cfg = eval_params["decoder"]
     decoder_name = decoder_cfg["name"]
     if decoder_name == "greedy":
-        decoder = GreedyDecoder(max_steps_factor=decoder_cfg.get("max_steps_factor", 4))
+        decoder = GreedyDecoder(horizon_factor=decoder_cfg.get("horizon_factor", 4))
     elif decoder_name == "beam_search":
         decoder = BeamSearchDecoder(
-            max_steps_factor=decoder_cfg.get("max_steps_factor", 4),
+            horizon_factor=decoder_cfg.get("horizon_factor", 4),
             beam_size=decoder_cfg.get("beam_size", 16),
         )
     else:

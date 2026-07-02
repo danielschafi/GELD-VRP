@@ -11,16 +11,16 @@ class GreedyDecoder(Decoder):
     """Greedily constructs a tour by always taking the next node with the highest probability by the model.
     argmax over model probabilities. """
 
-    def __init__(self, max_steps_factor: int = 4):
+    def __init__(self, horizon_factor: int = 4):
         # Because of return-to-depot trips we need more steps than tour length; stop early when all are done.
-        self.max_steps_factor = max_steps_factor
+        self.horizon_factor = horizon_factor
 
     @torch.no_grad()
     def decode(self, model, env) -> SolveResult:
         static_state, dynamic_state = env.reset()
         model.embed_static_state_once(static_state)
 
-        max_steps = env.num_nodes * self.max_steps_factor
+        max_steps = env.num_nodes * self.horizon_factor
         for _ in range(max_steps):
             if dynamic_state.done.all():
                 break

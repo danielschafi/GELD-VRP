@@ -37,7 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         choices=["synthetic", "solomon", "homberger", "all"],
     )
-    parser.add_argument("--synthetic-episodes", type=int, default=defaults["synthetic"]["episodes"])
+    parser.add_argument(
+        "--synthetic-num-instances",
+        type=int,
+        default=defaults["synthetic"]["num_instances"],
+    )
     parser.add_argument("--synthetic-batch-size", type=int, default=defaults["synthetic"]["batch_size"])
     parser.add_argument("--no-beam", action="store_true", help="Use greedy decoding instead of beam search")
     parser.add_argument("--beam-size", type=int, default=defaults["decoder"]["beam_size"])
@@ -49,23 +53,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rc-iterations",
         type=int,
-        default=defaults["reconstruction"]["num_iterations"],
+        default=defaults["reconstruction"]["rc_iterations"],
         help="Number of reconstruction iterations per instance",
     )
     parser.add_argument(
-        "--rc-min-window-length",
+        "--rc-window-size-min",
         type=int,
-        default=defaults["reconstruction"]["min_window_length"],
+        default=defaults["reconstruction"]["window_size_min"],
         help="Minimum number of tour positions per repair window",
     )
     parser.add_argument(
-        "--rc-min-window-count",
+        "--rc-num-windows-min",
         type=int,
-        default=defaults["reconstruction"]["min_window_count"],
+        default=defaults["reconstruction"]["num_windows_min"],
         help="Minimum number of parallel repair windows per iteration",
     )
     parser.add_argument(
-        "--rc-diversify-coords",
+        "--rc-augment-coords",
         action="store_true",
         help="Apply random coordinate rotations during reconstruction (slower)",
     )
@@ -87,16 +91,16 @@ def main() -> None:
         "path": args.checkpoint_path,
         "epoch": args.checkpoint_epoch,
     }
-    eval_params["synthetic"]["episodes"] = args.synthetic_episodes
+    eval_params["synthetic"]["num_instances"] = args.synthetic_num_instances
     eval_params["synthetic"]["batch_size"] = args.synthetic_batch_size
     eval_params["decoder"]["name"] = "greedy" if args.no_beam else "beam_search"
     eval_params["decoder"]["beam_size"] = args.beam_size
     eval_params["reconstruction"] = {
         "enabled": not args.no_rc,
-        "num_iterations": args.rc_iterations,
-        "min_window_length": args.rc_min_window_length,
-        "min_window_count": args.rc_min_window_count,
-        "diversify_coords": args.rc_diversify_coords,
+        "rc_iterations": args.rc_iterations,
+        "window_size_min": args.rc_window_size_min,
+        "num_windows_min": args.rc_num_windows_min,
+        "augment_coords": args.rc_augment_coords,
     }
 
     tracker = ExperimentTracker(

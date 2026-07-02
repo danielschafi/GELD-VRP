@@ -34,23 +34,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-path", type=str, default=defaults["model_load"]["path"])
     parser.add_argument("--checkpoint-epoch", type=int, default=defaults["model_load"]["epoch"])
     parser.add_argument(
-        "--sizes",
+        "--n-customers-values",
         type=int,
         nargs="+",
-        default=defaults["sizes"],
-        help="Problem sizes (customer counts) to benchmark",
+        default=defaults["n_customers_values"],
+        help="Customer counts to benchmark",
     )
     parser.add_argument(
-        "--episodes",
+        "--num-instances",
         type=int,
         default=None,
-        help="Instances per size (default: 50 for n<=500, 20 for n<=2000, 10 for n<=10000, 5 above)",
+        help="Instances per n_customers (default: adaptive by size)",
     )
     parser.add_argument(
-        "--batch-size",
+        "--decode-batch-size",
         type=int,
         default=None,
-        help="Override adaptive batch size per size bucket",
+        help="Override adaptive decode batch size per n_customers",
     )
     parser.add_argument("--beam-size", type=int, default=defaults["decoder"]["beam_size"])
     parser.add_argument("--seed", type=int, default=defaults["seed"])
@@ -76,9 +76,9 @@ def main() -> None:
         "path": args.checkpoint_path,
         "epoch": args.checkpoint_epoch,
     }
-    benchmark_params["sizes"] = args.sizes
-    benchmark_params["episodes"] = args.episodes
-    benchmark_params["batch_size"] = args.batch_size
+    benchmark_params["n_customers_values"] = args.n_customers_values
+    benchmark_params["num_instances"] = args.num_instances
+    benchmark_params["decode_batch_size"] = args.decode_batch_size
     benchmark_params["seed"] = args.seed
     benchmark_params["alpha"] = args.alpha
     benchmark_params["decoder"]["beam_size"] = args.beam_size
@@ -101,7 +101,7 @@ def main() -> None:
     logger = logging.getLogger("root")
     for size_summary in summary.size_summaries:
         logger.info(
-            f"n={size_summary.problem_size}: "
+            f"n_customers={size_summary.problem_size}: "
             f"mean={size_summary.decode_time_mean_sec:.4f}s, "
             f"p95={size_summary.decode_time_p95_sec:.4f}s, "
             f"{size_summary.instances_per_sec:.2f} inst/s"
@@ -111,7 +111,7 @@ def main() -> None:
             f"Scaling exponent alpha={summary.scaling_exponent:.2f}, "
             f"prefactor={summary.scaling_prefactor:.4e}"
         )
-    logger.info(f"Max successful size: {summary.max_successful_size}")
+    logger.info(f"Max successful n_customers: {summary.max_successful_size}")
     tracker.finish()
 
 

@@ -81,8 +81,8 @@ class ScalingSummary:
     """Full scaling benchmark result."""
 
     beam_size: int
-    max_steps_factor: int
-    sizes_attempted: list[int]
+    horizon_factor: int
+    n_customers_attempted: list[int]
     max_successful_size: int
     scaling_exponent: float | None
     scaling_prefactor: float | None

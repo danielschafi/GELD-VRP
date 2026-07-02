@@ -120,56 +120,7 @@ class CVRPTWEnv:
         self.full_label_tours = dataset["label_tours"].requires_grad_(False)
         self.full_label_costs = dataset["costs"].requires_grad_(False)
 
-    def load_problem_tensors(
-        self,
-        coords: torch.Tensor,
-        demand: torch.Tensor,
-        tw_start: torch.Tensor,
-        tw_end: torch.Tensor,
-        service_time: torch.Tensor,
-    ) -> None:
-        """Load one batch tensors for inference/evaluation"""
-        self.batch_coords = coords
-        self.batch_demand = demand
-        self.batch_tw_start = tw_start
-        self.batch_tw_end = tw_end
-        self.batch_service_time = service_time
-        self.batch_label_tours = None
-        self.batch_label_costs = None
-        self.batch_size = coords.size(0)
-        self.num_nodes = coords.size(1)
-        self.sync_batch_to_device()
-
-    def num_samples(self) -> int:
-        """Number of loaded training instances in the stored full dataset."""
-        return len(self.full_node_coords)
-
-    def load_one_batch_of_problems(self, batch_offset: int, batch_size: int, train: bool = True):
-        """Load one batch of samples from the stored full dataset."""
-        self.batch_offset = batch_offset
-        self.batch_size = batch_size
-
-        # Load just one batch of problems
-        self.batch_coords = self.full_node_coords[batch_offset : batch_offset + batch_size]  # was self.problems
-        self.batch_demand = self.full_node_demand[batch_offset : batch_offset + batch_size]
-        self.batch_tw_start = self.full_node_tw_start[batch_offset : batch_offset + batch_size]
-        self.batch_tw_end = self.full_node_tw_end[batch_offset : batch_offset + batch_size]
-        self.batch_service_time = self.full_node_service_time[batch_offset : batch_offset + batch_size]
-        self.batch_label_tours = self.full_label_tours[batch_offset : batch_offset + batch_size]
-        self.batch_label_costs = self.full_label_costs[batch_offset : batch_offset + batch_size]
-
-        self.num_nodes = self.batch_coords.shape[1]
-
-        # Reversal does not work because of tw constraints
-        # self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
-
-        if train:
-            rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
-            self.batch_coords = apply_random_rotation(self.batch_coords, rotation_id)
-
-        self.sync_batch_to_device()
-
-    def load_batch_tensors(
+    def set_batch(
         self,
         coords: torch.Tensor,
         demand: torch.Tensor,
@@ -191,6 +142,32 @@ class CVRPTWEnv:
         self.batch_label_costs = label_costs
         self.batch_size = coords.size(0)
         self.num_nodes = coords.size(1)
+
+        if train:
+            rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
+            self.batch_coords = apply_random_rotation(self.batch_coords, rotation_id)
+
+        self.sync_batch_to_device()
+
+    def num_samples(self) -> int:
+        """Number of loaded training instances in the stored full dataset."""
+        return len(self.full_node_coords)
+
+    def load_batch_from_dataset(self, batch_offset: int, batch_size: int, train: bool = True):
+        """Load one batch of samples from the stored full dataset."""
+        self.batch_offset = batch_offset
+        self.batch_size = batch_size
+
+        # Load just one batch of problems
+        self.batch_coords = self.full_node_coords[batch_offset : batch_offset + batch_size]  # was self.problems
+        self.batch_demand = self.full_node_demand[batch_offset : batch_offset + batch_size]
+        self.batch_tw_start = self.full_node_tw_start[batch_offset : batch_offset + batch_size]
+        self.batch_tw_end = self.full_node_tw_end[batch_offset : batch_offset + batch_size]
+        self.batch_service_time = self.full_node_service_time[batch_offset : batch_offset + batch_size]
+        self.batch_label_tours = self.full_label_tours[batch_offset : batch_offset + batch_size]
+        self.batch_label_costs = self.full_label_costs[batch_offset : batch_offset + batch_size]
+
+        self.num_nodes = self.batch_coords.shape[1]
 
         if train:
             rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
