@@ -107,7 +107,7 @@ class CVRPTWEnv:
 
     def load_all_data(self):
         """
-        Currently only loads the train dataset for stage 1 supervised learning training
+        Loads the stage 1 training dataset
         """
         dataset = load_cvrptw_data_with_labels()
 
@@ -140,11 +140,11 @@ class CVRPTWEnv:
         self.sync_batch_to_device()
 
     def num_samples(self) -> int:
-        """Number of loaded training instances."""
+        """Number of loaded training instances in the stored full dataset."""
         return len(self.full_node_coords)
 
     def load_one_batch_of_problems(self, batch_offset: int, batch_size: int, train: bool = True):
-        """Load one batch of samples."""
+        """Load one batch of samples from the stored full dataset."""
         self.batch_offset = batch_offset
         self.batch_size = batch_size
 
@@ -161,6 +161,35 @@ class CVRPTWEnv:
 
         # Reversal does not work because of tw constraints
         # self.batch_label_tours = maybe_reverse_tour(self.batch_label_tours)
+
+        if train:
+            rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
+            self.batch_coords = apply_random_rotation(self.batch_coords, rotation_id)
+
+        self.sync_batch_to_device()
+
+    def load_batch_tensors(
+        self,
+        coords: torch.Tensor,
+        demand: torch.Tensor,
+        tw_start: torch.Tensor,
+        tw_end: torch.Tensor,
+        service_time: torch.Tensor,
+        label_tours: torch.Tensor | None = None,
+        label_costs: torch.Tensor | None = None,
+        train: bool = False,
+    ) -> None:
+        """Load one in-memory tensor batch (optionally with labels/costs)."""
+        self.batch_offset = None
+        self.batch_coords = coords
+        self.batch_demand = demand
+        self.batch_tw_start = tw_start
+        self.batch_tw_end = tw_end
+        self.batch_service_time = service_time
+        self.batch_label_tours = label_tours
+        self.batch_label_costs = label_costs
+        self.batch_size = coords.size(0)
+        self.num_nodes = coords.size(1)
 
         if train:
             rotation_id = torch.randint(low=0, high=8, size=[1])[0].item()
@@ -334,7 +363,6 @@ class CVRPTWEnv:
         self,
         tour: torch.Tensor,
         tour_lengths: torch.Tensor | None = None,
-        *,
         record_from: int = 0,
         depart_time_out: torch.Tensor | None = None,
         capacity_after_out: torch.Tensor | None = None,
