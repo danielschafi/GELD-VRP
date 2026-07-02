@@ -39,7 +39,13 @@ def default_training_stage_1_optimizer_params() -> dict:
 
 def default_training_stage_2_optimizer_params() -> dict:
     """Stage-2 SIL optimizer (lr=1e-5)."""
-    return {"optimizer": {"lr": 1e-5}}
+    return {
+        "optimizer": {"lr": 1e-5},
+        "scheduler": {
+            "milestones": [20, 35, 45],
+            "gamma": 0.5,
+        },
+    }
 
 
 def default_training_stage_1_params(use_cuda: bool = True, cuda_device_num: int = 0) -> dict:
@@ -83,7 +89,7 @@ def default_training_stage_2_params(
             "max_limit": 5,
             "per_batch": 5,
             "best_limit": 3,
-            "problem_size_init": 100,
+            "problem_size_min": 100,
             "problem_size_max": 1000,
             "model_load_path": model_load_path,
             "model_load_epoch": model_load_epoch,

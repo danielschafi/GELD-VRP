@@ -73,11 +73,12 @@ class DynamicState:
 class CVRPTWEnv:
     def __init__(self, **env_params):
         self.env_params = env_params
-        self.device = (
-            torch.device("cuda", torch.cuda.current_device())
-            if "device" not in env_params.keys()
-            else env_params["device"]
-        )
+        if "device" in env_params:
+            self.device = env_params["device"]
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda", torch.cuda.current_device())
+        else:
+            self.device = torch.device("cpu")
 
         # Full dataset — set by load_raw_data
         self.full_node_coords = None

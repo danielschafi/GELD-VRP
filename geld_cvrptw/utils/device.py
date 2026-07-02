@@ -1,5 +1,7 @@
 """Device and dtype helpers."""
 
+from collections.abc import Iterable
+
 import torch
 
 
@@ -9,6 +11,11 @@ def setup_device(use_cuda: bool = True, cuda_device_num: int = 0) -> torch.devic
         torch.cuda.set_device(cuda_device_num)
         return torch.device("cuda", cuda_device_num)
     return torch.device("cpu")
+
+
+def move_items_to_device(items: Iterable, device: torch.device):
+    """Move each tensor in an iterable to the given device."""
+    return tuple(item.to(device) for item in items)
 
 
 def float_dtype(device: torch.device):

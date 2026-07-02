@@ -6,8 +6,8 @@ import logging
 from geld_cvrptw.config.defaults_params import (
     default_env_params,
     default_model_params,
-    default_training_stage_1_params,
-    default_training_stage_1_optimizer_params,
+    default_training_stage_2_params,
+    default_training_stage_2_optimizer_params,
 )
 
 from geld_cvrptw.training.stage_2_trainer import Stage2Trainer
@@ -17,15 +17,32 @@ from geld_cvrptw.utils.logging import create_logger, get_result_folder, set_resu
 
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser for stage-2 training."""
-    stage_1_defaults = default_training_stage_1_params()
+    stage_2_defaults = default_training_stage_2_params()
     parser = argparse.ArgumentParser(description="GELD stage-2 supervised training")
-    parser.add_argument("--epochs", type=int, default=stage_1_defaults["epochs"])
-    parser.add_argument("--train-episodes", type=int, default=1000000) # this is a cap, is set to dataset size (samples per epoch)
-    parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument("--epochs", type=int, default=stage_2_defaults["epochs"])
+    parser.add_argument("--train-episodes", type=int, default=stage_2_defaults["train_episodes"])
+    parser.add_argument("--batch-size", type=int, default=stage_2_defaults["train_batch_size"])
     parser.add_argument("--cuda-device", type=int, default=0)
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--model-load-path", type=str, default=None, help="Resume from checkpoint directory")
+    parser.add_argument(
+        "--stage1-checkpoint-path",
+        type=str,
+        required=True,
+        help="Path to stage-1 result folder containing the pretrained checkpoint",
+    )
+    parser.add_argument(
+        "--stage1-checkpoint-epoch",
+        type=int,
+        default=49,
+        help="Stage-1 checkpoint epoch to initialize from",
+    )
+    parser.add_argument(
+        "--model-load-path",
+        type=str,
+        default=None,
+        help="Resume stage-2 training from checkpoint directory",
+    )
     parser.add_argument("--model-load-epoch", type=int, default=1, help="Checkpoint epoch to load when resuming")
     parser.add_argument(
         "--result-folder",
@@ -46,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main():
-    """Run stage-1 supervised learning on small-scale TSP instances."""
+    """Run stage-2 curriculum / self-improvement training on increasing instance sizes."""
     args = build_parser().parse_args()
     create_logger(log_file={"prefix": "train", "desc": "stage_2", "filename": "log.txt"})
 
@@ -58,13 +75,20 @@ def main():
 
     env_params = default_env_params(mode="train")
     model_params = default_model_params(mode="train")
-    optimizer_params = default_training_stage_1_optimizer_params()
-    trainer_params = default_training_stage_1_params(use_cuda=not args.no_cuda, cuda_device_num=args.cuda_device)
+    optimizer_params = default_training_stage_2_optimizer_params()
+    trainer_params = default_training_stage_2_params(
+        use_cuda=not args.no_cuda,
+        cuda_device_num=args.cuda_device,
+        model_load_path=args.stage1_checkpoint_path,
+        model_load_epoch=args.stage1_checkpoint_epoch,
+    )
 
     if args.debug:
         trainer_params["epochs"] = 2
         trainer_params["train_episodes"] = 8
         trainer_params["train_batch_size"] = 4
+        trainer_params["problem_size_min"] = 20
+        trainer_params["problem_size_max"] = 30
     else:
         trainer_params["epochs"] = args.epochs
         trainer_params["train_episodes"] = args.train_episodes

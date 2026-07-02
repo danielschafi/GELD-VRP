@@ -9,10 +9,9 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.distributions.uniform import Uniform
 
-from geld_cvrptw.data.benchmark_loaders import records_to_benchmark_instances
-from geld_cvrptw.data.generator import generate_instances, _generate_valid_batch
+from geld_cvrptw.data.generator import _generate_valid_batch
 from geld_cvrptw.inference.decoders.beam_search import BeamSearchDecoder
-from geld_cvrptw.inference.pipeline import InferencePipeline, build_pipeline
+from geld_cvrptw.inference.pipeline import InferencePipeline
 from geld_cvrptw.inference.types import SolveResult
 from geld_cvrptw.utils.experiment_tracker import ExperimentTracker, should_log_batch
 from geld_cvrptw.utils.metrics import AverageMeter, LogData, TimeEstimator
@@ -20,7 +19,7 @@ from geld_cvrptw.utils.logging import (
     get_result_folder,
     util_print_log_array,
 )
-from geld_cvrptw.utils.device import setup_device
+from geld_cvrptw.utils.device import setup_device, move_items_to_device
 
 
 from geld_cvrptw.model.GELD_CVRPTW import GeldCvrptwModel
@@ -67,13 +66,13 @@ class Stage2Trainer:
         self.env = CVRPTWEnv(**self.env_params)
         self.env.set_device(self.device)
 
+        self.optimizer = Adam(self.model.parameters(), **self.optimizer_params["optimizer"])
         self.scheduler = MultiStepLR(self.optimizer, **self.optimizer_params["scheduler"])
 
         # Load the checkpoint from stage 1 training (SL) to continue
         checkpoint_path = f"{trainer_params['model_load_path']}/checkpoint-{trainer_params['model_load_epoch']}.pt"
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer = Adam(self.model.parameters(), **self.optimizer_params["optimizer"])
 
         # Training restart (if stage 2 training already started)
         self.start_epoch = 1
@@ -83,7 +82,7 @@ class Stage2Trainer:
 
         # Load BS decoder with standard params (16 Beams)
         self.solver:InferencePipeline = InferencePipeline(
-            decoder = BeamSearchDecoder(),
+            decoder = BeamSearchDecoder(beam_size=self.trainer_params["beam_size"]),
             postprocessors = None
         )
 
@@ -92,7 +91,7 @@ class Stage2Trainer:
         self.time_estimator = TimeEstimator()
 
     def run_training(self):
-        """Run stage 1 supervised training"""
+        """Run stage 2 supervised training with curriculum learning"""
 
         # Load Train Data into memory.
         self.env.set_device(self.device)
@@ -137,7 +136,10 @@ class Stage2Trainer:
         tours = dataset["label_tours"].requires_grad_(False)
         costs = dataset["costs"].requires_grad_(False)
 
-        return coords, demand, tw_start, tw_end, service_time, tours, costs
+        return move_items_to_device(
+            (coords, demand, tw_start, tw_end, service_time, tours, costs),
+            self.device,
+        )
 
 
 
@@ -147,13 +149,42 @@ class Stage2Trainer:
         """
                 # Generate Random instances of current problem size
         alpha = Uniform(0.5, 3.0).sample().item()
-        depot_xy, node_xy, node_demand, capacity, service_time, tw_start, tw_end = _generate_valid_batch(
-            num_samples=self.trainer_params["train_episodes"],
-            problem_size=current_problem_size,
-            alpha=alpha,
-            seed=epoch,
-            batch_size=self.trainer_params["train_batch_size"],
-        )
+        num_samples = self.trainer_params["train_episodes"]
+        gen_batch_size = self.trainer_params["train_batch_size"]
+
+        torch.manual_seed(epoch)
+        depot_batches: list[torch.Tensor] = []
+        node_xy_batches: list[torch.Tensor] = []
+        node_demand_batches: list[torch.Tensor] = []
+        capacity_batches: list[torch.Tensor] = []
+        service_time_batches: list[torch.Tensor] = []
+        tw_start_batches: list[torch.Tensor] = []
+        tw_end_batches: list[torch.Tensor] = []
+
+        collected = 0
+        while collected < num_samples:
+            chunk_size = min(gen_batch_size, num_samples - collected)
+            depot_xy, node_xy, node_demand, capacity, service_time, tw_start, tw_end = _generate_valid_batch(
+                chunk_size,
+                current_problem_size,
+                alpha,
+            )
+            depot_batches.append(depot_xy)
+            node_xy_batches.append(node_xy)
+            node_demand_batches.append(node_demand)
+            capacity_batches.append(capacity)
+            service_time_batches.append(service_time)
+            tw_start_batches.append(tw_start)
+            tw_end_batches.append(tw_end)
+            collected += chunk_size
+
+        depot_xy = torch.cat(depot_batches, dim=0)
+        node_xy = torch.cat(node_xy_batches, dim=0)
+        node_demand = torch.cat(node_demand_batches, dim=0)
+        capacity = torch.cat(capacity_batches, dim=0)
+        service_time = torch.cat(service_time_batches, dim=0)
+        tw_start = torch.cat(tw_start_batches, dim=0)
+        tw_end = torch.cat(tw_end_batches, dim=0)
 
         # Normalize + Prepend depot at index 0
         coords = torch.cat((depot_xy, node_xy), dim=1)
@@ -166,11 +197,27 @@ class Stage2Trainer:
         tw_end = torch.cat((torch.full_like(capacity[:, None], 3.0), tw_end), dim=1)
         service_time = torch.cat((torch.zeros_like(capacity[:, None]), service_time), dim=1)
 
+        coords, demand, tw_start, tw_end, service_time = move_items_to_device(
+            (coords, demand, tw_start, tw_end, service_time),
+            self.device,
+        )
+
         self.env.load_problem_tensors(coords, demand, tw_start, tw_end, service_time)
         solve_result:SolveResult = self.solver.run(self.model, self.env)
         self.env.reset()
 
-        return coords, demand, tw_start, tw_end, service_time, solve_result.tour, solve_result.length_normalized
+        batch_size = solve_result.tour.size(0)
+        depot_column = torch.zeros(batch_size, 1, dtype=torch.long, device=self.device)
+        tour_rows = [
+            torch.cat((depot_column[i], solve_result.tour[i]), dim=0)
+            for i in range(batch_size)
+        ]
+        tours = torch.nn.utils.rnn.pad_sequence(
+            tour_rows, batch_first=True, padding_value=TOUR_PAD_VALUE
+        )
+        costs = solve_result.length_normalized
+
+        return coords, demand, tw_start, tw_end, service_time, tours, costs
 
     def make_batches(self, instances,  batch_size:int, num_batches:int|None = None, shuffle:bool=True):
         """
@@ -371,7 +418,7 @@ class Stage2Trainer:
             self.tracker.save_training_progress(
                 self.result_log,
                 metadata={
-                    "run_type": "train_sl",
+                    "run_type": "train_stage_2",
                     "trainer_params": self.trainer_params,
                 },
                 save_plots=epoch > 1,
@@ -405,7 +452,7 @@ class Stage2Trainer:
                 self.tracker.save_training_progress(
                     self.result_log,
                     metadata={
-                        "run_type": "train_sl",
+                        "run_type": "train_stage_2",
                         "trainer_params": self.trainer_params,
                     },
                 )
